@@ -40,10 +40,14 @@ export default function UAVList({ activeUavId, payload }) {
 
   async function refresh() {
     const list = await listUAVs();
-    setUavs(list);
-    setMissions(await listMissions());
+    const safeList = Array.isArray(list) ? list : [];
+    setUavs(safeList);
+
+    const mList = await listMissions();
+    setMissions(Array.isArray(mList) ? mList : []);
+
     setStats(await getOverviewStats());
-    if (selectedId == null && list.length) setSelectedId(list[0].id);
+    if (selectedId == null && safeList.length) setSelectedId(safeList[0].id);
   }
 
   useEffect(() => {
@@ -67,7 +71,10 @@ export default function UAVList({ activeUavId, payload }) {
     };
   }, [selectedId]);
 
-  const selected = uavs.find((u) => u.id === selectedId);
+  const safeUavs = Array.isArray(uavs) ? uavs : [];
+  const safeMissions = Array.isArray(missions) ? missions : [];
+
+  const selected = safeUavs.find((u) => u.id === selectedId);
   const isLive = selectedId === activeUavId && activeUavId != null;
 
   async function addUav(e) {
@@ -101,17 +108,36 @@ export default function UAVList({ activeUavId, payload }) {
     refresh();
   }
 
-  const total = uavs.length;
-  const flying = uavs.filter((u) => u.status === "flying").length;
-  const ready = uavs.filter((u) => u.status === "ready").length;
-  const maintenance = uavs.filter((u) => u.status === "maintenance").length;
-  const offline = uavs.filter((u) => u.status === "offline").length;
+  const total = safeUavs.length;
+  const flying = safeUavs.filter((u) => u.status === "flying").length;
+  const ready = safeUavs.filter((u) => u.status === "ready").length;
+  const maintenance = safeUavs.filter((u) => u.status === "maintenance").length;
+  const offline = safeUavs.filter((u) => u.status === "offline").length;
   const alertCount = stats?.alert_count_24h ?? 0;
 
-  const runningMissions = missions.filter((m) => m.status === "active");
+  const runningMissions = safeMissions.filter((m) => m.status === "active");
 
   return (
     <div className="fleet-page">
+      <div className="live-sub-header" style={{ marginBottom: "10px" }}>
+        <div className="header-left">
+          <div className="uav-selector-wrapper">
+            <span className="sub-title-label">🛸 DANH SÁCH UAV</span>
+            <span className="dot-divider">/</span>
+            <span className="breadcrumb-sub">Trang chủ &gt; UAV</span>
+          </div>
+        </div>
+        <div className="header-right-telemetry">
+          <div className="telemetry-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>GPS <strong>12</strong></span></div>
+          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><span>Liên kết <strong>Strong</strong></span></div>
+          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg><span>Pin <strong>78%</strong></span></div>
+          <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
+          <div className="user-profile-badge">
+            <div className="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
+          </div>
+        </div>
+      </div>
       <div className="stat-row">
         <div className="stat-card">
           <div className="stat-icon">🛸</div>
@@ -172,7 +198,7 @@ export default function UAVList({ activeUavId, payload }) {
               </tr>
             </thead>
             <tbody>
-              {uavs.map((u) => (
+              {safeUavs.map((u) => (
                 <UavRow
                   key={u.id}
                   uav={u}
@@ -183,7 +209,7 @@ export default function UAVList({ activeUavId, payload }) {
                   onDelete={() => removeUav(u.id)}
                 />
               ))}
-              {uavs.length === 0 && (
+              {safeUavs.length === 0 && (
                 <tr><td colSpan={8} className="muted">Chưa có UAV nào</td></tr>
               )}
             </tbody>
@@ -267,7 +293,7 @@ export default function UAVList({ activeUavId, payload }) {
 
         <section className="panel">
           <h2>Vị trí UAV</h2>
-          <FleetMap uavs={uavs} onSelect={setSelectedId} />
+          <FleetMap uavs={safeUavs} onSelect={setSelectedId} />
         </section>
       </div>
 
@@ -288,8 +314,8 @@ export default function UAVList({ activeUavId, payload }) {
               {runningMissions.map((m) => (
                 <tr key={m.id}>
                   <td>{m.name}</td>
-                  <td>{uavs.find((u) => u.id === m.uav_id)?.name ?? m.uav_id}</td>
-                  <td>{m.waypoints_reached} / {m.waypoints.length}</td>
+                  <td>{safeUavs.find((u) => u.id === m.uav_id)?.name ?? m.uav_id}</td>
+                  <td>{m.waypoints_reached} / {m.waypoints?.length ?? 0}</td>
                   <td>
                     <div className="progress-bar small"><div className="progress-fill" style={{ width: `${m.progress_pct}%` }} /></div>
                   </td>

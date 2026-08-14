@@ -24,11 +24,19 @@ export default function Overview({ payload }) {
 
   useEffect(() => {
     async function load() {
-      setStats(await getOverviewStats());
+      const overviewStats = await getOverviewStats();
+      setStats(overviewStats);
+
       const uavList = await listUAVs();
-      setUavs(uavList);
-      setMissions(await listMissions());
-      if (viewedUavId == null && uavList.length) setViewedUavId(uavList[0].id);
+      const safeUavs = Array.isArray(uavList) ? uavList : [];
+      setUavs(safeUavs);
+
+      const missionList = await listMissions();
+      setMissions(Array.isArray(missionList) ? missionList : []);
+
+      if (viewedUavId == null && safeUavs.length) {
+        setViewedUavId(safeUavs[0].id);
+      }
     }
     load();
     const id = setInterval(load, 3000);
@@ -50,10 +58,15 @@ export default function Overview({ payload }) {
     };
   }, [viewedUavId]);
 
-  const objects = viewedUavId === activeUavId ? payload?.objects ?? [] : [];
+  const safeObjects = Array.isArray(payload?.objects) ? payload.objects : [];
+  const objects = viewedUavId === activeUavId ? safeObjects : [];
   const isLive = viewedUavId === activeUavId && activeUavId != null;
-  const currentMission = missions.find((m) => m.uav_id === viewedUavId && m.status === "active");
-  const viewedUav = uavs.find((u) => u.id === viewedUavId);
+
+  const safeMissions = Array.isArray(missions) ? missions : [];
+  const safeUavs = Array.isArray(uavs) ? uavs : [];
+
+  const currentMission = safeMissions.find((m) => m.uav_id === viewedUavId && m.status === "active");
+  const viewedUav = safeUavs.find((u) => u.id === viewedUavId);
 
   async function activate() {
     await activateUAV(viewedUavId);
@@ -61,6 +74,25 @@ export default function Overview({ payload }) {
 
   return (
     <div className="overview">
+      <div className="live-sub-header" style={{ marginBottom: "10px" }}>
+        <div className="header-left">
+          <div className="uav-selector-wrapper">
+            <span className="sub-title-label">📊 TỔNG QUAN</span>
+            <span className="dot-divider">/</span>
+            <span className="breadcrumb-sub">Trang chủ &gt; Tổng quan</span>
+          </div>
+        </div>
+        <div className="header-right-telemetry">
+          <div className="telemetry-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>GPS <strong>12</strong></span></div>
+          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><span>Liên kết <strong>Strong</strong></span></div>
+          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg><span>Pin <strong>78%</strong></span></div>
+          <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
+          <div className="user-profile-badge">
+            <div className="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
+          </div>
+        </div>
+      </div>
       <div className="stat-row">
         <div className="stat-card">
           <div className="stat-icon">🛸</div>
@@ -113,7 +145,7 @@ export default function Overview({ payload }) {
               </div>
               <div className="mission-card-body">
                 <span>UAV: {viewedUav?.name}</span>
-                <span>Waypoints: {currentMission.waypoints_reached} / {currentMission.waypoints.length}</span>
+                <span>Waypoints: {currentMission.waypoints_reached} / {currentMission.waypoints?.length ?? 0}</span>
               </div>
               <div className="progress-bar">
                 <div className="progress-fill" style={{ width: `${currentMission.progress_pct}%` }} />
@@ -127,7 +159,7 @@ export default function Overview({ payload }) {
             <div className="side-panel-header">
               <h2>Trạng thái UAV</h2>
               <select value={viewedUavId ?? ""} onChange={(e) => setViewedUavId(Number(e.target.value))}>
-                {uavs.map((u) => (
+                {safeUavs.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
               </select>

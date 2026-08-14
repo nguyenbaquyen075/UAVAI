@@ -44,10 +44,16 @@ export default function Targets({ payload }) {
 
   async function refresh() {
     const list = await listTargets();
-    setTargets(list);
-    setUavs(await listUAVs());
-    setRecentEvents(await getRecentTargetEvents());
-    if (selectedId == null && list.length) setSelectedId(list[0].id);
+    const safeTargets = Array.isArray(list) ? list : [];
+    setTargets(safeTargets);
+
+    const uList = await listUAVs();
+    setUavs(Array.isArray(uList) ? uList : []);
+
+    const evList = await getRecentTargetEvents();
+    setRecentEvents(Array.isArray(evList) ? evList : []);
+
+    if (selectedId == null && safeTargets.length) setSelectedId(safeTargets[0].id);
   }
 
   useEffect(() => {
@@ -56,15 +62,27 @@ export default function Targets({ payload }) {
     return () => clearInterval(id);
   }, [selectedId]);
 
-  const selected = targets.find((t) => t.id === selectedId);
+  const safeTargets = Array.isArray(targets) ? targets : [];
+  const safeUavs = Array.isArray(uavs) ? uavs : [];
+  const safeRecentEvents = Array.isArray(recentEvents) ? recentEvents : [];
+  const safeEvents = Array.isArray(events) ? events : [];
+  const safeNotes = Array.isArray(notes) ? notes : [];
+  const safeSnapshots = Array.isArray(snapshots) ? snapshots : [];
+
+  const selected = safeTargets.find((t) => t.id === selectedId);
 
   useEffect(() => {
     if (selectedId == null) return;
     let cancelled = false;
     async function load() {
-      setEvents(await getTargetEvents(selectedId));
-      setNotes(await getTargetNotes(selectedId));
-      setSnapshots(await getTargetSnapshots(selectedId));
+      const ev = await getTargetEvents(selectedId);
+      if (!cancelled) setEvents(Array.isArray(ev) ? ev : []);
+
+      const nt = await getTargetNotes(selectedId);
+      if (!cancelled) setNotes(Array.isArray(nt) ? nt : []);
+
+      const sn = await getTargetSnapshots(selectedId);
+      if (!cancelled) setSnapshots(Array.isArray(sn) ? sn : []);
     }
     load();
     return () => { cancelled = true; };
@@ -92,30 +110,50 @@ export default function Targets({ payload }) {
     if (!noteText.trim()) return;
     await addTargetNote(selectedId, noteText.trim());
     setNoteText("");
-    setNotes(await getTargetNotes(selectedId));
+    const updatedNotes = await getTargetNotes(selectedId);
+    setNotes(Array.isArray(updatedNotes) ? updatedNotes : []);
   }
 
-  const filtered = targets.filter((t) => {
+  const filtered = safeTargets.filter((t) => {
     if (search && !`TGT_${t.id} ${t.class}`.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter && t.status !== statusFilter) return false;
     if (threatFilter && t.threat_level !== threatFilter) return false;
     return true;
   });
 
-  const total = targets.length;
-  const tracking = targets.filter((t) => t.status === "tracking" || t.status === "new").length;
-  const confirmed = targets.filter((t) => t.status === "confirmed").length;
-  const highThreat = targets.filter((t) => t.threat_level === "high").length;
-  const processed = targets.filter((t) => t.status === "processed").length;
+  const total = safeTargets.length;
+  const tracking = safeTargets.filter((t) => t.status === "tracking" || t.status === "new").length;
+  const confirmed = safeTargets.filter((t) => t.status === "confirmed").length;
+  const highThreat = safeTargets.filter((t) => t.threat_level === "high").length;
+  const processed = safeTargets.filter((t) => t.status === "processed").length;
 
-  const vehicleCount = targets.filter((t) => t.class !== "person").length;
-  const personCount = targets.filter((t) => t.class === "person").length;
+  const vehicleCount = safeTargets.filter((t) => t.class !== "person").length;
+  const personCount = safeTargets.filter((t) => t.class === "person").length;
 
   const isLive = selected && payload?.active_uav_id === selected.uav_id;
   const uavGps = isLive ? payload?.uav_status?.gps : telemetry;
 
   return (
     <div className="targets-page">
+      <div className="live-sub-header" style={{ marginBottom: "10px" }}>
+        <div className="header-left">
+          <div className="uav-selector-wrapper">
+            <span className="sub-title-label">🎯 QUẢN LÝ MỤC TIÊU</span>
+            <span className="dot-divider">/</span>
+            <span className="breadcrumb-sub">Trang chủ &gt; Mục tiêu</span>
+          </div>
+        </div>
+        <div className="header-right-telemetry">
+          <div className="telemetry-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>GPS <strong>12</strong></span></div>
+          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><span>Liên kết <strong>Strong</strong></span></div>
+          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg><span>Pin <strong>78%</strong></span></div>
+          <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
+          <div className="user-profile-badge">
+            <div className="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
+          </div>
+        </div>
+      </div>
       <div className="stat-row">
         <div className="stat-card">
           <div className="stat-icon">🎯</div>
@@ -179,7 +217,7 @@ export default function Targets({ payload }) {
         <section className="panel">
           <h2>Bản đồ mục tiêu</h2>
           <p className="muted small">Vị trí mục tiêu là ước tính (GPS+hướng UAV giả lập kết hợp khoảng cách thật), không phải toạ độ đo được.</p>
-          <TargetsMap targets={targets} uavPosition={uavGps} onSelect={setSelectedId} />
+          <TargetsMap targets={safeTargets} uavPosition={uavGps} onSelect={setSelectedId} />
         </section>
 
         <aside className="side-panel">
@@ -200,7 +238,7 @@ export default function Targets({ payload }) {
                   <dt>Vị trí (ước tính)</dt><dd>{selected.lat ? `${selected.lat.toFixed(4)}, ${selected.lon.toFixed(4)}` : "-"}</dd>
                   <dt>Phát hiện lúc</dt><dd>{fmtTime(selected.first_seen)}</dd>
                   <dt>Cập nhật cuối</dt><dd>{fmtTime(selected.last_seen)}</dd>
-                  <dt>UAV theo dõi</dt><dd>{uavs.find((u) => u.id === selected.uav_id)?.name}</dd>
+                  <dt>UAV theo dõi</dt><dd>{safeUavs.find((u) => u.id === selected.uav_id)?.name}</dd>
                 </dl>
                 <div className="detail-actions">
                   {selected.status !== "confirmed" && <button onClick={() => setStatus("confirmed")}>✔ Đã xác định</button>}
@@ -211,11 +249,11 @@ export default function Targets({ payload }) {
             )}
           </section>
 
-          {selected && snapshots.length > 0 && (
+          {selected && safeSnapshots.length > 0 && (
             <section>
               <h2>Ảnh liên quan</h2>
               <div className="snapshot-grid">
-                {snapshots.map((s) => (
+                {safeSnapshots.map((s) => (
                   <a key={s.id} href={`${API_BASE}/api/logs/${s.id}/snapshot`} target="_blank" rel="noreferrer">
                     <img src={`${API_BASE}/api/logs/${s.id}/snapshot`} alt={s.timestamp} />
                   </a>
@@ -232,13 +270,13 @@ export default function Targets({ payload }) {
                 <button type="submit">Thêm</button>
               </form>
               <div className="notes-list">
-                {notes.map((n) => (
+                {safeNotes.map((n) => (
                   <div key={n.id} className="note-item">
                     <strong>{n.author}</strong> <span className="muted">{fmtTime(n.created_at)}</span>
                     <p>{n.text}</p>
                   </div>
                 ))}
-                {notes.length === 0 && <p className="muted">Chưa có ghi chú</p>}
+                {safeNotes.length === 0 && <p className="muted">Chưa có ghi chú</p>}
               </div>
             </section>
           )}
@@ -258,31 +296,31 @@ export default function Targets({ payload }) {
           <h2>Mức độ nguy hiểm</h2>
           <DonutChart segments={[
             { label: "Cao", value: highThreat, color: "#f87171" },
-            { label: "Trung bình", value: targets.filter((t) => t.threat_level === "medium").length, color: "#facc15" },
-            { label: "Thấp", value: targets.filter((t) => t.threat_level === "low").length, color: "#60a5fa" },
+            { label: "Trung bình", value: safeTargets.filter((t) => t.threat_level === "medium").length, color: "#facc15" },
+            { label: "Thấp", value: safeTargets.filter((t) => t.threat_level === "low").length, color: "#60a5fa" },
           ]} />
         </section>
 
         <section className="panel wide">
           <h2>Hoạt động gần đây</h2>
           <div className="activity-list">
-            {recentEvents.map((e) => (
+            {safeRecentEvents.map((e) => (
               <div key={e.id} className="activity-item" onClick={() => setSelectedId(e.target_id)}>
                 <span className="timeline-icon">{EVENT_ICON[e.type] ?? "•"}</span>
                 <span className="timeline-time">{fmtTime(e.timestamp)}</span>
                 <span>TGT_{e.target_id} ({CLASS_LABEL[e.class] ?? e.class}) — {e.label}</span>
               </div>
             ))}
-            {recentEvents.length === 0 && <p className="muted">Chưa có hoạt động nào</p>}
+            {safeRecentEvents.length === 0 && <p className="muted">Chưa có hoạt động nào</p>}
           </div>
         </section>
       </div>
 
-      {selected && events.length > 0 && (
+      {selected && safeEvents.length > 0 && (
         <section className="panel wide">
           <h2>Lịch sử mục tiêu TGT_{selected.id}</h2>
           <div className="timeline">
-            {events.slice().reverse().map((e) => (
+            {safeEvents.slice().reverse().map((e) => (
               <div key={e.id} className="timeline-item">
                 <span className="timeline-icon">{EVENT_ICON[e.type] ?? "•"}</span>
                 <span className="timeline-time">{fmtTime(e.timestamp)}</span>

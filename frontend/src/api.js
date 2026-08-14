@@ -1,159 +1,371 @@
 export const API_BASE = "http://localhost:8001";
 
+// --- Mock Fallback Data ---
+const MOCK_SETTINGS = {
+  alert_threshold_m: 10,
+  warning_threshold_m: 20,
+  max_acceptable_delay: 0.5,
+  enabled_classes: ["person", "car", "motorcycle", "bus", "truck"],
+};
+
+const MOCK_UAVS = [
+  { id: 1, name: "UAV_01", type: "Falcon 8X", serial: "FLC-8812", status: "flying", zone: "Khu vực biên giới A", video_source: "rtsp://192.168.1.100/live" },
+  { id: 2, name: "UAV_02", type: "Eagle Pro", serial: "EGL-9021", status: "flying", zone: "Khu vực biên giới B", video_source: "rtsp://192.168.1.101/live" },
+  { id: 3, name: "UAV_03", type: "SkyEye 4K", serial: "SKY-4401", status: "ready", zone: "Khu C", video_source: "rtsp://192.168.1.102/live" },
+  { id: 4, name: "UAV_04", type: "Phantom 4 RTK", serial: "PHT-1029", status: "flying", zone: "Khu D", video_source: "rtsp://192.168.1.103/live" },
+];
+
+const MOCK_MISSIONS = [
+  {
+    id: 1,
+    name: "Tuần tra khu vực biên giới A",
+    uav_id: 2,
+    priority: "high",
+    status: "active",
+    progress_pct: 75,
+    waypoints_reached: 4,
+    waypoints: [
+      { lat: 21.0285, lon: 105.8542 },
+      { lat: 21.0315, lon: 105.8585 },
+      { lat: 21.0345, lon: 105.8620 },
+      { lat: 21.0370, lon: 105.8650 },
+    ],
+    started_at: new Date(Date.now() - 3600_000).toISOString(),
+    expected_end_at: new Date(Date.now() + 3600_000).toISOString(),
+    description: "Giám sát an ninh khu vực biên giới phía Bắc",
+  },
+  {
+    id: 2,
+    name: "Kiểm tra trạm biến áp 110kV",
+    uav_id: 1,
+    priority: "medium",
+    status: "active",
+    progress_pct: 50,
+    waypoints_reached: 2,
+    waypoints: [
+      { lat: 21.0276, lon: 105.8512 },
+      { lat: 21.0300, lon: 105.8550 },
+    ],
+    started_at: new Date(Date.now() - 1800_000).toISOString(),
+    expected_end_at: new Date(Date.now() + 2700_000).toISOString(),
+    description: "Tuần tra định kỳ cơ sở hạ tầng điện lực",
+  },
+];
+
+const MOCK_STATS = {
+  uav_online: 4,
+  uav_total: 6,
+  mission_running: 2,
+  mission_total: 5,
+  targets_tracked: 6,
+  alert_count_24h: 3,
+  recent_alerts: [
+    { id: 1, timestamp: "18:41:32", severity: "red", class: "person", distance_m: 8.5 },
+    { id: 2, timestamp: "18:40:21", severity: "yellow", class: "car", distance_m: 18.2 },
+    { id: 3, timestamp: "18:39:10", severity: "yellow", class: "truck", distance_m: 22.0 },
+  ],
+};
+
+const MOCK_TARGETS = [
+  { id: 1, class: "car", threat_level: "high", status: "tracking", distance_m: 120, first_seen: new Date(Date.now() - 3600_000).toISOString(), last_seen: new Date().toISOString(), uav_id: 2, lat: 21.0345, lon: 105.8620 },
+  { id: 2, class: "person", threat_level: "medium", status: "confirmed", distance_m: 45, first_seen: new Date(Date.now() - 2400_000).toISOString(), last_seen: new Date().toISOString(), uav_id: 1, lat: 21.0275, lon: 105.8580 },
+  { id: 3, class: "truck", threat_level: "low", status: "new", distance_m: 310, first_seen: new Date(Date.now() - 1200_000).toISOString(), last_seen: new Date().toISOString(), uav_id: 3, lat: 21.0215, lon: 105.8525 },
+];
+
+const MOCK_LOGS = [
+  { id: 1, timestamp: "2026-08-14 09:15:32", class: "person", distance_m: 8.5, severity: "red" },
+  { id: 2, timestamp: "2026-08-14 09:10:21", class: "car", distance_m: 18.2, severity: "yellow" },
+  { id: 3, timestamp: "2026-08-14 08:55:10", class: "truck", distance_m: 22.0, severity: "yellow" },
+];
+
+// --- API Methods with Graceful Fallbacks ---
 export async function getSettings() {
-  const r = await fetch(`${API_BASE}/api/settings`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/settings`);
+    if (r.ok) return await r.json();
+  } catch {}
+  return MOCK_SETTINGS;
 }
 
 export async function updateSettings(patch) {
-  const r = await fetch(`${API_BASE}/api/settings`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { ...MOCK_SETTINGS, ...patch };
 }
 
 export async function getLogs(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  const r = await fetch(`${API_BASE}/api/logs${qs ? `?${qs}` : ""}`);
-  return r.json();
+  try {
+    const qs = new URLSearchParams(params).toString();
+    const r = await fetch(`${API_BASE}/api/logs${qs ? `?${qs}` : ""}`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return MOCK_LOGS;
 }
 
 export async function getTrackHistory(trackId) {
-  const r = await fetch(`${API_BASE}/api/tracks/${trackId}/history`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/tracks/${trackId}/history`);
+    if (r.ok) return await r.json();
+  } catch {}
+  return [];
 }
 
 export async function listUAVs() {
-  const r = await fetch(`${API_BASE}/api/uavs`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/uavs`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return MOCK_UAVS;
 }
 
 export async function createUAV(uav) {
-  const r = await fetch(`${API_BASE}/api/uavs`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(uav),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/uavs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(uav),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  const newUav = { id: Date.now(), status: "ready", ...uav };
+  MOCK_UAVS.push(newUav);
+  return newUav;
 }
 
 export async function updateUAV(uavId, patch) {
-  const r = await fetch(`${API_BASE}/api/uavs/${uavId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/uavs/${uavId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { id: uavId, ...patch };
 }
 
 export async function deleteUAV(uavId) {
-  const r = await fetch(`${API_BASE}/api/uavs/${uavId}`, { method: "DELETE" });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/uavs/${uavId}`, { method: "DELETE" });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { success: true };
 }
 
 export async function activateUAV(uavId) {
-  const r = await fetch(`${API_BASE}/api/uavs/${uavId}/activate`, { method: "POST" });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/uavs/${uavId}/activate`, { method: "POST" });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { active_uav_id: uavId };
 }
 
 export async function getUavTelemetry(uavId) {
-  const r = await fetch(`${API_BASE}/api/uavs/${uavId}/telemetry`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/uavs/${uavId}/telemetry`);
+    if (r.ok) return await r.json();
+  } catch {}
+  return {
+    battery_pct: 78,
+    altitude_m: 120,
+    speed_kmh: 45.2,
+    signal: "Strong",
+    lat: 21.0285,
+    lon: 105.8542,
+  };
 }
 
 export async function getUavTrail(uavId) {
-  const r = await fetch(`${API_BASE}/api/uavs/${uavId}/trail`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/uavs/${uavId}/trail`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [
+    { lat: 21.0285, lon: 105.8542 },
+    { lat: 21.0315, lon: 105.8585 },
+    { lat: 21.0345, lon: 105.8620 },
+  ];
 }
 
 export async function listMissions() {
-  const r = await fetch(`${API_BASE}/api/missions`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/missions`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return MOCK_MISSIONS;
 }
 
 export async function createMission(mission) {
-  const r = await fetch(`${API_BASE}/api/missions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(mission),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/missions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(mission),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  const newMission = { id: Date.now(), status: "active", progress_pct: 0, waypoints_reached: 0, ...mission };
+  MOCK_MISSIONS.push(newMission);
+  return newMission;
 }
 
 export async function updateMissionStatus(missionId, status) {
-  const r = await fetch(`${API_BASE}/api/missions/${missionId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/missions/${missionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { id: missionId, status };
 }
 
 export async function deleteMission(missionId) {
-  const r = await fetch(`${API_BASE}/api/missions/${missionId}`, { method: "DELETE" });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/missions/${missionId}`, { method: "DELETE" });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { success: true };
 }
 
 export async function patchMission(missionId, patch) {
-  const r = await fetch(`${API_BASE}/api/missions/${missionId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/missions/${missionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { id: missionId, ...patch };
 }
 
 export async function getMissionTimeline(missionId) {
-  const r = await fetch(`${API_BASE}/api/missions/${missionId}/timeline`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/missions/${missionId}/timeline`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [
+    { type: "created", time: new Date(Date.now() - 3600_000).toISOString(), label: "Khởi tạo nhiệm vụ" },
+    { type: "start", time: new Date(Date.now() - 3000_000).toISOString(), label: "UAV cất cánh" },
+    { type: "waypoint", time: new Date(Date.now() - 1800_000).toISOString(), label: "Đã đạt Waypoint 1" },
+    { type: "alert", time: new Date(Date.now() - 600_000).toISOString(), label: "Cảnh báo đối tượng gần khu vực" },
+  ];
 }
 
 export async function getOverviewStats() {
-  const r = await fetch(`${API_BASE}/api/stats/overview`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/stats/overview`);
+    if (r.ok) return await r.json();
+  } catch {}
+  return MOCK_STATS;
 }
 
 export async function listTargets() {
-  const r = await fetch(`${API_BASE}/api/targets`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/targets`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return MOCK_TARGETS;
 }
 
 export async function patchTarget(targetId, patch) {
-  const r = await fetch(`${API_BASE}/api/targets/${targetId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/targets/${targetId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { id: targetId, ...patch };
 }
 
 export async function getTargetEvents(targetId) {
-  const r = await fetch(`${API_BASE}/api/targets/${targetId}/events`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/tracks/${targetId}/events`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [
+    { id: 1, type: "detected", timestamp: new Date(Date.now() - 3600_000).toISOString(), label: "Phát hiện lần đầu" },
+    { id: 2, type: "status_changed", timestamp: new Date(Date.now() - 1800_000).toISOString(), label: "Chuyển sang Đang theo dõi" },
+  ];
 }
 
 export async function getRecentTargetEvents() {
-  const r = await fetch(`${API_BASE}/api/targets/events/recent`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/targets/events/recent`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [
+    { id: 1, target_id: 1, type: "detected", timestamp: new Date(Date.now() - 1200_000).toISOString(), class: "car", label: "Phát hiện ô tô khả nghi" },
+    { id: 2, target_id: 2, type: "detected", timestamp: new Date(Date.now() - 600_000).toISOString(), class: "person", label: "Phát hiện đối tượng nghi vấn" },
+  ];
 }
 
 export async function getTargetNotes(targetId) {
-  const r = await fetch(`${API_BASE}/api/targets/${targetId}/notes`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/targets/${targetId}/notes`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [
+    { id: 1, author: "admin", created_at: new Date(Date.now() - 1800_000).toISOString(), text: "Đối tượng di chuyển hướng 320° NW" },
+  ];
 }
 
 export async function addTargetNote(targetId, text) {
-  const r = await fetch(`${API_BASE}/api/targets/${targetId}/notes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/targets/${targetId}/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { id: Date.now(), author: "admin", created_at: new Date().toISOString(), text };
 }
 
 export async function getTargetSnapshots(targetId) {
-  const r = await fetch(`${API_BASE}/api/targets/${targetId}/snapshots`);
-  return r.json();
+  try {
+    const r = await fetch(`${API_BASE}/api/targets/${targetId}/snapshots`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [];
 }

@@ -13,12 +13,15 @@ export default function LogViewer() {
     if (filters.severity) params.severity = filters.severity;
     if (filters.start) params.start = `${filters.start}:00Z`;
     if (filters.end) params.end = `${filters.end}:59Z`;
-    setRows(await getLogs(params));
+    const res = await getLogs(params);
+    setRows(Array.isArray(res) ? res : []);
   }
 
   useEffect(() => {
     refresh();
   }, []);
+
+  const safeRows = Array.isArray(rows) ? rows : [];
 
   return (
     <section className="panel wide">
@@ -64,7 +67,7 @@ export default function LogViewer() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {safeRows.map((r) => (
             <tr key={r.id} className={r.severity}>
               <td>{r.timestamp}</td>
               <td>{r.class}</td>
@@ -77,7 +80,7 @@ export default function LogViewer() {
               </td>
             </tr>
           ))}
-          {rows.length === 0 && (
+          {safeRows.length === 0 && (
             <tr>
               <td colSpan={5} className="muted">Không có dữ liệu</td>
             </tr>

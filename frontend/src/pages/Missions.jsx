@@ -68,11 +68,15 @@ export default function Missions({ payload }) {
 
   async function refresh() {
     const missionList = await listMissions();
-    setMissions(missionList);
+    const safeMissions = Array.isArray(missionList) ? missionList : [];
+    setMissions(safeMissions);
+
     const uavList = await listUAVs();
-    setUavs(uavList);
-    if (!form.uav_id && uavList.length) setForm((f) => ({ ...f, uav_id: uavList[0].id }));
-    if (selectedId == null && missionList.length) setSelectedId(missionList[0].id);
+    const safeUavs = Array.isArray(uavList) ? uavList : [];
+    setUavs(safeUavs);
+
+    if (!form.uav_id && safeUavs.length) setForm((f) => ({ ...f, uav_id: safeUavs[0].id }));
+    if (selectedId == null && safeMissions.length) setSelectedId(safeMissions[0].id);
   }
 
   useEffect(() => {
@@ -84,11 +88,15 @@ export default function Missions({ payload }) {
   useEffect(() => {
     if (selectedId == null || creating) return;
     let cancelled = false;
-    getMissionTimeline(selectedId).then((t) => !cancelled && setTimeline(t));
+    getMissionTimeline(selectedId).then((t) => !cancelled && setTimeline(Array.isArray(t) ? t : []));
     return () => { cancelled = true; };
   }, [selectedId, missions, creating]);
 
-  const selected = missions.find((m) => m.id === selectedId);
+  const safeMissions = Array.isArray(missions) ? missions : [];
+  const safeUavs = Array.isArray(uavs) ? uavs : [];
+  const safeTimeline = Array.isArray(timeline) ? timeline : [];
+
+  const selected = safeMissions.find((m) => m.id === selectedId);
 
   useEffect(() => {
     if (!selected) return;
@@ -104,6 +112,7 @@ export default function Missions({ payload }) {
 
   // --- map ---
   useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current).setView(START, 15);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
@@ -150,7 +159,7 @@ export default function Missions({ payload }) {
     setCreating(false);
     setNewWaypoints([]);
     setForm({ ...form, name: "", description: "" });
-    setSelectedId(res.id);
+    if (res?.id) setSelectedId(res.id);
     refresh();
   }
 
@@ -165,7 +174,7 @@ export default function Missions({ payload }) {
     refresh();
   }
 
-  const filtered = missions.filter((m) => {
+  const filtered = safeMissions.filter((m) => {
     if (search && !m.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter && m.status !== statusFilter) return false;
     if (uavFilter && String(m.uav_id) !== uavFilter) return false;
@@ -175,19 +184,38 @@ export default function Missions({ payload }) {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const total = missions.length;
-  const active = missions.filter((m) => m.status === "active").length;
-  const completed = missions.filter((m) => m.status === "completed").length;
-  const failedOrCancelled = missions.filter((m) => m.status === "cancelled" || m.status === "failed").length;
-  const totalFlightHours = missions
+  const total = safeMissions.length;
+  const active = safeMissions.filter((m) => m.status === "active").length;
+  const completed = safeMissions.filter((m) => m.status === "completed").length;
+  const failedOrCancelled = safeMissions.filter((m) => m.status === "cancelled" || m.status === "failed").length;
+  const totalFlightHours = safeMissions
     .filter((m) => m.status === "completed")
     .reduce((sum, m) => sum + (new Date(m.expected_end_at) - new Date(m.started_at)) / 3_600_000, 0);
 
   const isLive = selected && payload?.active_uav_id === selected.uav_id;
-  const alertEvents = timeline.filter((e) => e.type === "alert");
+  const alertEvents = safeTimeline.filter((e) => e.type === "alert");
 
   return (
     <div className="missions-page">
+      <div className="live-sub-header" style={{ marginBottom: "10px" }}>
+        <div className="header-left">
+          <div className="uav-selector-wrapper">
+            <span className="sub-title-label">🚩 QUẢN LÝ NHIỆM VỤ</span>
+            <span className="dot-divider">/</span>
+            <span className="breadcrumb-sub">Trang chủ &gt; Nhiệm vụ</span>
+          </div>
+        </div>
+        <div className="header-right-telemetry">
+          <div className="telemetry-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>GPS <strong>12</strong></span></div>
+          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><span>Liên kết <strong>Strong</strong></span></div>
+          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg><span>Pin <strong>78%</strong></span></div>
+          <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
+          <div className="user-profile-badge">
+            <div className="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
+          </div>
+        </div>
+      </div>
       <div className="stat-row">
         <div className="stat-card">
           <div className="stat-icon">📋</div>
@@ -228,7 +256,7 @@ export default function Missions({ payload }) {
               <form onSubmit={submitMission} className="inline-form wrap">
                 <input placeholder="Tên nhiệm vụ" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                 <select value={form.uav_id} onChange={(e) => setForm({ ...form, uav_id: e.target.value })}>
-                  {uavs.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  {safeUavs.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
                 <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
                   <option value="high">Ưu tiên cao</option>
@@ -251,7 +279,7 @@ export default function Missions({ payload }) {
               </select>
               <select value={uavFilter} onChange={(e) => { setUavFilter(e.target.value); setPage(1); }}>
                 <option value="">UAV: Tất cả</option>
-                {uavs.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {safeUavs.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
               <select value={priorityFilter} onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }}>
                 <option value="">Ưu tiên: Tất cả</option>
@@ -275,8 +303,8 @@ export default function Missions({ payload }) {
                 {pageItems.map((m) => (
                   <tr key={m.id} className={m.id === selectedId ? "row-selected" : ""} style={{ cursor: "pointer" }} onClick={() => setSelectedId(m.id)}>
                     <td>{m.name}</td>
-                    <td>{m.waypoints.length} điểm</td>
-                    <td>{uavs.find((u) => u.id === m.uav_id)?.name ?? m.uav_id}</td>
+                    <td>{m.waypoints?.length ?? 0} điểm</td>
+                    <td>{safeUavs.find((u) => u.id === m.uav_id)?.name ?? m.uav_id}</td>
                     <td><span className={`badge ${STATUS_CLASS[m.status]}`}>{STATUS_LABEL[m.status]}</span></td>
                     <td>{PRIORITY_LABEL[m.priority]}</td>
                     <td>{fmtTime(m.started_at)}</td>
@@ -325,11 +353,11 @@ export default function Missions({ payload }) {
               <>
                 <dl className="telemetry-list">
                   <dt>Tên</dt><dd>{selected.name}</dd>
-                  <dt>UAV</dt><dd>{uavs.find((u) => u.id === selected.uav_id)?.name}</dd>
+                  <dt>UAV</dt><dd>{safeUavs.find((u) => u.id === selected.uav_id)?.name}</dd>
                   <dt>Ưu tiên</dt><dd>{PRIORITY_LABEL[selected.priority]}</dd>
                   <dt>Bắt đầu</dt><dd>{fmtTime(selected.started_at)}</dd>
                   <dt>Dự kiến kết thúc</dt><dd>{fmtTime(selected.expected_end_at)}</dd>
-                  <dt>Waypoints</dt><dd>{selected.waypoints_reached}/{selected.waypoints.length}</dd>
+                  <dt>Waypoints</dt><dd>{selected.waypoints_reached}/{selected.waypoints?.length ?? 0}</dd>
                 </dl>
                 {selected.description && <p className="muted">{selected.description}</p>}
                 <div className="detail-actions">
@@ -363,7 +391,7 @@ export default function Missions({ payload }) {
               <div className="progress-section-body">
                 <ProgressRing pct={selected.progress_pct} />
                 <div className="progress-section-stats">
-                  <div><span className="muted">Waypoints</span><strong>{selected.waypoints_reached}/{selected.waypoints.length}</strong></div>
+                  <div><span className="muted">Waypoints</span><strong>{selected.waypoints_reached}/{selected.waypoints?.length ?? 0}</strong></div>
                   <div><span className="muted">Cảnh báo</span><strong>{alertEvents.length}</strong></div>
                   <div><span className="muted">Còn lại</span><strong>{selected.status === "active" ? timeRemaining(selected.expected_end_at) : "-"}</strong></div>
                 </div>
@@ -378,14 +406,14 @@ export default function Missions({ payload }) {
         {!selected && <p className="muted">Chọn 1 nhiệm vụ để xem dòng thời gian</p>}
         {selected && (
           <div className="timeline">
-            {timeline.map((e, i) => (
+            {safeTimeline.map((e, i) => (
               <div key={i} className={`timeline-item ${e.type}`}>
                 <span className="timeline-icon">{EVENT_ICON[e.type]}</span>
                 <span className="timeline-time">{fmtTime(e.time)}</span>
                 <span className="timeline-label">{e.label}</span>
               </div>
             ))}
-            {timeline.length === 0 && <p className="muted">Chưa có sự kiện nào</p>}
+            {safeTimeline.length === 0 && <p className="muted">Chưa có sự kiện nào</p>}
           </div>
         )}
       </section>
