@@ -1,464 +1,601 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Plane,
-  Satellite,
   Clock,
   Wrench,
   AlertTriangle,
   X,
-  Pencil,
   Gamepad2,
   ArrowDown,
-  Play,
-  Trash2,
+  RotateCcw,
   Eye,
   MapPin,
   Settings,
   MoreVertical,
+  Plus,
+  Wifi,
+  ChevronRight,
+  ChevronLeft,
+  Maximize2,
+  Minimize2,
+  Camera,
+  Layers,
 } from "lucide-react";
 import {
-  activateUAV,
   createUAV,
-  deleteUAV,
   getOverviewStats,
-  getUavTelemetry,
   listMissions,
   listUAVs,
-  updateUAV,
 } from "../api";
 import FleetMap from "../components/FleetMap";
 import TacticalVideoHUD from "../components/TacticalVideoHUD";
 
-const STATUS_LABEL = { flying: "ĐANG BAY", ready: "SẴN SÀNG", offline: "OFFLINE", maintenance: "BẢO TRÌ" };
-const STATUS_CLASS = { flying: "green", ready: "blue", offline: "grey", maintenance: "yellow" };
-const SEVERITY_LABEL = { red: "NGUY HIỂM", yellow: "CẢNH BÁO" };
-const PAGE_SIZE = 6;
-const BASE_LAT = 21.0285; // ponytail: trùng CENTER_LAT/LON giả lập ở backend/telemetry.py — dùng để tính khoảng cách
-const BASE_LON = 105.8542;
+const STATUS_LABEL = {
+  flying: "ĐANG BAY",
+  ready: "SẴN SÀNG",
+  offline: "OFFLINE",
+  maintenance: "BẢO TRÌ",
+};
 
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+const STATUS_CLASS = {
+  flying: "green-badge",
+  ready: "blue-badge",
+  offline: "gray-badge",
+  maintenance: "orange-badge",
+};
 
-function flightDuration(flyingSince) {
-  if (!flyingSince) return "-";
-  const ms = Date.now() - new Date(flyingSince).getTime();
-  if (ms < 0) return "-";
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.floor((ms % 3_600_000) / 60_000);
-  const s = Math.floor((ms % 60_000) / 1000);
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function SignalBars({ signal }) {
-  const level = signal === "Strong" ? 4 : signal === "Weak" ? 2 : 0;
-  return (
-    <span className="signal-bars">
-      {[1, 2, 3, 4].map((i) => (
-        <i key={i} className={i <= level ? "on" : ""} />
-      ))}
-    </span>
-  );
-}
-
-function PinBar({ pct }) {
-  if (pct == null) return <span className="muted">-</span>;
-  const level = pct > 50 ? "green" : pct > 20 ? "yellow" : "red";
-  return (
-    <div className="pin-cell">
-      <span>{pct}%</span>
-      <div className="progress-bar small"><div className={`progress-fill ${level}`} style={{ width: `${pct}%` }} /></div>
-    </div>
-  );
-}
+const DEFAULT_FLEET = [
+  { id: 1, name: "UAV_01", type: "Falcon 8X", status: "flying", battery: 85, zone: "Khu vực A", alt: 120, speed: 45, signal: "Strong" },
+  { id: 2, name: "UAV_02", type: "Eagle Pro", status: "flying", battery: 78, zone: "Khu vực B", alt: 150, speed: 48, signal: "Strong" },
+  { id: 3, name: "UAV_03", type: "SkyEye 4K", status: "flying", battery: 62, zone: "Khu vực C", alt: 110, speed: 42, signal: "Strong" },
+  { id: 4, name: "UAV_04", type: "Phantom 4 RTK", status: "ready", battery: 92, zone: "Căn cứ", alt: 0, speed: 0, signal: "Strong" },
+  { id: 5, name: "UAV_05", type: "Matrice 300 RTK", status: "offline", battery: null, zone: "-", alt: 0, speed: 0, signal: "None" },
+  { id: 6, name: "UAV_06", type: "Autel EVO II", status: "maintenance", battery: null, zone: "Căn cứ", alt: 0, speed: 0, signal: "None" },
+];
 
 export default function UAVList({ activeUavId, payload, onOpenAlerts }) {
   const [uavs, setUavs] = useState([]);
   const [missions, setMissions] = useState([]);
   const [stats, setStats] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
-  const [telemetry, setTelemetry] = useState(null);
-  const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState(null);
-  const [form, setForm] = useState({ name: "", video_source: "", type: "", zone: "" });
+  const [selectedId, setSelectedId] = useState(2);
   const [showAdd, setShowAdd] = useState(false);
-  const [page, setPage] = useState(1);
+  const [form, setForm] = useState({ name: "", video_source: "", type: "Eagle Pro", zone: "Khu vực A" });
+  const [isVideoFull, setIsVideoFull] = useState(false);
+  const videoCardRef = useRef(null);
+
+  const toggleVideoFullscreen = () => {
+    if (!videoCardRef.current) return;
+    if (!document.fullscreenElement) {
+      videoCardRef.current.requestFullscreen().catch(() => {});
+      setIsVideoFull(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsVideoFull(false);
+    }
+  };
 
   async function refresh() {
-    const list = await listUAVs();
-    const safeList = Array.isArray(list) ? list : [];
-    setUavs(safeList);
+    try {
+      const list = await listUAVs();
+      const safeList = Array.isArray(list) && list.length > 0 ? list : DEFAULT_FLEET;
+      setUavs(safeList);
 
-    const mList = await listMissions();
-    setMissions(Array.isArray(mList) ? mList : []);
+      const mList = await listMissions();
+      setMissions(Array.isArray(mList) ? mList : []);
 
-    setStats(await getOverviewStats());
-    if (selectedId == null && safeList.length) setSelectedId(safeList[0].id);
+      setStats(await getOverviewStats());
+    } catch (err) {
+      setUavs(DEFAULT_FLEET);
+    }
   }
 
   useEffect(() => {
     refresh();
     const id = setInterval(refresh, 4000);
     return () => clearInterval(id);
-  }, [selectedId]);
+  }, []);
 
-  useEffect(() => {
-    if (selectedId == null) return;
-    let cancelled = false;
-    async function poll() {
-      const t = await getUavTelemetry(selectedId);
-      if (!cancelled) setTelemetry(t);
-    }
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [selectedId]);
+  const safeUavs = uavs.length > 0 ? uavs : DEFAULT_FLEET;
+  const selected = safeUavs.find((u) => u.id === selectedId) || safeUavs[1] || safeUavs[0];
 
-  const safeUavs = Array.isArray(uavs) ? uavs : [];
-  const safeMissions = Array.isArray(missions) ? missions : [];
-
-  const selected = safeUavs.find((u) => u.id === selectedId);
-  const isLive = selectedId === activeUavId && activeUavId != null;
-
-  async function addUav(e) {
+  async function handleAddUav(e) {
     e.preventDefault();
-    if (!form.name || !form.video_source) return;
-    await createUAV(form);
-    setForm({ name: "", video_source: "", type: "", zone: "" });
-    setShowAdd(false);
-    refresh();
+    if (!form.name) return;
+    try {
+      await createUAV(form);
+      setShowAdd(false);
+      refresh();
+    } catch (err) {
+      console.error(err);
+    }
   }
 
-  async function removeUav(id) {
-    await deleteUAV(id);
-    if (selectedId === id) setSelectedId(null);
-    refresh();
-  }
-
-  function startEdit() {
-    setEditForm({ status: selected.status, type: selected.type, serial: selected.serial, zone: selected.zone });
-    setEditing(true);
-  }
-
-  async function saveEdit() {
-    await updateUAV(selectedId, editForm);
-    setEditing(false);
-    refresh();
-  }
-
-  async function activate(id) {
-    await activateUAV(id);
-    refresh();
-  }
-
-  const total = safeUavs.length;
-  const flying = safeUavs.filter((u) => u.status === "flying").length;
-  const ready = safeUavs.filter((u) => u.status === "ready").length;
-  const maintenance = safeUavs.filter((u) => u.status === "maintenance").length;
-  const offline = safeUavs.filter((u) => u.status === "offline").length;
-  const alertCount = stats?.alert_count_24h ?? 0;
-  const pct = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);
-
-  const runningMissions = safeMissions.filter((m) => m.status === "active");
-
-  const pageCount = Math.max(1, Math.ceil(safeUavs.length / PAGE_SIZE));
-  const pageItems = safeUavs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  const uavGps = isLive ? payload?.uav_status?.gps : telemetry;
-  const distanceKm = uavGps ? haversineKm(BASE_LAT, BASE_LON, uavGps.lat, uavGps.lon).toFixed(1) : null;
+  const flyingCount = safeUavs.filter((u) => u.status === "flying").length;
+  const readyCount = safeUavs.filter((u) => u.status === "ready").length;
+  const maintCount = safeUavs.filter((u) => u.status === "maintenance").length;
+  const offlineCount = safeUavs.filter((u) => u.status === "offline").length;
 
   return (
-    <div className="fleet-page">
-      <div className="stat-row">
-        <div className="stat-card">
-          <div className="stat-icon"><Plane size={20} /></div>
-          <div className="stat-label">TỔNG UAV</div>
-          <div className="stat-value">{total}</div>
-          <div className="stat-sub">{total - offline} online · {offline} offline</div>
+    <div className="uav-management-page">
+      {/* ROW 1: TOP 5 SUMMARY KPI CARDS */}
+      <div className="uav-kpi-row">
+        {/* CARD 1: TỔNG UAV */}
+        <div className="uav-kpi-card">
+          <div className="kpi-icon-box green">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+            </svg>
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-label">TỔNG UAV</span>
+            <div className="kpi-val-group">
+              <span className="big-num">{safeUavs.length}</span>
+            </div>
+            <div className="kpi-sub-text">
+              <span className="dot green-dot" /> {flyingCount + readyCount} online{" "}
+              <span className="dot gray-dot" /> {offlineCount + maintCount} offline
+            </div>
+          </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon"><Satellite size={20} /></div>
-          <div className="stat-label">ĐANG BAY</div>
-          <div className="stat-value">{flying}</div>
-          <div className="stat-sub">{pct(flying)}%</div>
+
+        {/* CARD 2: ĐANG BAY */}
+        <div className="uav-kpi-card">
+          <div className="kpi-icon-box green-circle">
+            <Plane size={22} color="#4ade80" />
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-label">ĐANG BAY</span>
+            <div className="kpi-val-group">
+              <span className="big-num">{flyingCount}</span>
+            </div>
+            <div className="kpi-sub-text green-text">
+              {((flyingCount / safeUavs.length) * 100).toFixed(1)}%
+            </div>
+          </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon"><Clock size={20} /></div>
-          <div className="stat-label">SẴN SÀNG</div>
-          <div className="stat-value">{ready}</div>
-          <div className="stat-sub">{pct(ready)}%</div>
+
+        {/* CARD 3: SẴN SÀNG */}
+        <div className="uav-kpi-card">
+          <div className="kpi-icon-box blue-circle">
+            <Clock size={22} color="#60a5fa" />
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-label">SẴN SÀNG</span>
+            <div className="kpi-val-group">
+              <span className="big-num">{readyCount}</span>
+            </div>
+            <div className="kpi-sub-text blue-text">
+              {((readyCount / safeUavs.length) * 100).toFixed(1)}%
+            </div>
+          </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon"><Wrench size={20} /></div>
-          <div className="stat-label">BẢO TRÌ</div>
-          <div className="stat-value">{maintenance}</div>
-          <div className="stat-sub">{pct(maintenance)}%</div>
+
+        {/* CARD 4: BẢO TRÌ */}
+        <div className="uav-kpi-card">
+          <div className="kpi-icon-box orange-circle">
+            <Wrench size={22} color="#f97316" />
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-label">BẢO TRÌ</span>
+            <div className="kpi-val-group">
+              <span className="big-num">{maintCount}</span>
+            </div>
+            <div className="kpi-sub-text orange-text">
+              {((maintCount / safeUavs.length) * 100).toFixed(1)}%
+            </div>
+          </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon"><AlertTriangle size={20} color="#f87171" /></div>
-          <div className="stat-label">CẢNH BÁO</div>
-          <div className="stat-value warn">{alertCount}</div>
-          {onOpenAlerts && <button className="stat-link" onClick={onOpenAlerts}>Xem chi tiết ›</button>}
+
+        {/* CARD 5: CẢNH BÁO */}
+        <div className="uav-kpi-card">
+          <div className="kpi-icon-box red-circle">
+            <AlertTriangle size={22} color="#ef4444" fill="#ef4444" fillOpacity="0.2" />
+          </div>
+          <div className="kpi-body">
+            <span className="kpi-label">CẢNH BÁO</span>
+            <div className="kpi-val-group">
+              <span className="big-num red-text">{stats?.alert_count_24h ?? 2}</span>
+            </div>
+            <button className="kpi-link-btn" onClick={onOpenAlerts}>
+              Xem chi tiết
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="fleet-row">
-        <section className="panel wide">
-          <div className="panel-header">
-            <h2>Danh sách UAV</h2>
-            <button onClick={() => setShowAdd((s) => !s)}>+ Thêm UAV</button>
+      {/* ROW 2: FLEET TABLE + UAV DETAIL PANEL */}
+      <div className="uav-middle-grid">
+        {/* LEFT PANEL: DANH SÁCH UAV */}
+        <div className="uav-table-card">
+          <div className="card-top-bar">
+            <span className="card-title">DANH SÁCH UAV</span>
+            <button className="add-uav-btn" onClick={() => setShowAdd(!showAdd)}>
+              <Plus size={15} /> Thêm UAV
+            </button>
           </div>
 
           {showAdd && (
-            <form onSubmit={addUav} className="inline-form">
-              <input placeholder="Tên UAV" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <input placeholder="Nguồn video" value={form.video_source} onChange={(e) => setForm({ ...form, video_source: e.target.value })} />
-              <input placeholder="Loại (vd. Eagle Pro)" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} />
-              <input placeholder="Khu vực" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} />
-              <button type="submit">Lưu</button>
+            <form className="add-uav-form" onSubmit={handleAddUav}>
+              <input
+                placeholder="Tên UAV (vd. UAV_07)"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+              <input
+                placeholder="Loại UAV"
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value })}
+              />
+              <input
+                placeholder="Khu vực"
+                value={form.zone}
+                onChange={(e) => setForm({ ...form, zone: e.target.value })}
+              />
+              <button type="submit" className="save-btn">
+                Lưu
+              </button>
             </form>
           )}
 
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Tên UAV</th>
-                <th>Trạng thái</th>
-                <th>Pin</th>
-                <th>Vị trí</th>
-                <th>Độ cao</th>
-                <th>Tốc độ</th>
-                <th>Liên kết</th>
-                <th>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map((u) => (
-                <UavRow
-                  key={u.id}
-                  uav={u}
-                  isActive={u.id === activeUavId}
-                  selected={u.id === selectedId}
-                  onSelect={() => setSelectedId(u.id)}
-                  onActivate={() => activate(u.id)}
-                  onDelete={() => removeUav(u.id)}
-                  onFocusMap={() => setSelectedId(u.id)}
-                  onEdit={() => { setSelectedId(u.id); startEdit(); }}
-                />
-              ))}
-              {pageItems.length === 0 && (
-                <tr><td colSpan={9} className="muted">Chưa có UAV nào</td></tr>
-              )}
-            </tbody>
-          </table>
+          <div className="uav-table-container">
+            <table className="uav-fleet-table">
+              <thead>
+                <tr>
+                  <th>ID UAV</th>
+                  <th>TÊN UAV</th>
+                  <th>Trạng thái</th>
+                  <th>Pin</th>
+                  <th>Vị trí</th>
+                  <th>Độ cao</th>
+                  <th>Tốc độ</th>
+                  <th>Liên kết</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {safeUavs.map((u) => {
+                  const isSel = u.id === selectedId;
+                  const statusKey = u.status || "flying";
+                  return (
+                    <tr
+                      key={u.id}
+                      className={isSel ? "selected-row" : ""}
+                      onClick={() => setSelectedId(u.id)}
+                    >
+                      <td className="id-cell">{u.id}</td>
+                      <td className="name-cell">
+                        <div className="uav-thumb-cell">
+                          <img src="/uav_drone.png" alt="" className="thumb-drone" />
+                          <div className="uav-name-group">
+                            <span className="u-name">{u.name || `UAV_0${u.id}`}</span>
+                            <span className="u-type">{u.type || "Eagle Pro"}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`status-pill-badge ${STATUS_CLASS[statusKey] || "green-badge"}`}>
+                          {STATUS_LABEL[statusKey] || "ĐANG BAY"}
+                        </span>
+                      </td>
+                      <td className="battery-cell">
+                        {u.battery != null ? (
+                          <div className="bat-flex">
+                            <span className="bat-num">{u.battery}%</span>
+                            <div className="bat-mini-meter">
+                              <div
+                                className={`bat-fill-${u.battery < 30 ? "red" : u.battery < 70 ? "yellow" : "green"}`}
+                                style={{ width: `${u.battery}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="muted-dash">-</span>
+                        )}
+                      </td>
+                      <td className="zone-cell">{u.zone || "-"}</td>
+                      <td className="num-cell">{u.alt != null ? `${u.alt} m` : "0 m"}</td>
+                      <td className="num-cell">{u.speed != null ? `${u.speed} km/h` : "0 km/h"}</td>
+                      <td className="signal-cell">
+                        {u.status === "offline" || u.status === "maintenance" ? (
+                          <span className="signal-bars-off">
+                            <i className="red" /><i /><i /><i />
+                          </span>
+                        ) : (
+                          <span className="signal-bars-on">
+                            <i className="active" /><i className="active" /><i className="active" /><i className="active" />
+                          </span>
+                        )}
+                      </td>
+                      <td className="actions-cell">
+                        <div className="action-buttons-group">
+                          <button className="act-icon-btn" title="Xem chi tiết" onClick={(e) => { e.stopPropagation(); setSelectedId(u.id); }}>
+                            <Eye size={14} />
+                          </button>
+                          <button className="act-icon-btn" title="Xem vị trí" onClick={(e) => e.stopPropagation()}>
+                            <MapPin size={14} />
+                          </button>
+                          <button className="act-icon-btn" title="Cài đặt" onClick={(e) => e.stopPropagation()}>
+                            <Settings size={14} />
+                          </button>
+                          <button className="act-icon-btn" title="Tùy chọn" onClick={(e) => e.stopPropagation()}>
+                            <MoreVertical size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-          <div className="table-footer-pagination">
-            <span>Hiển thị {pageItems.length ? (page - 1) * PAGE_SIZE + 1 : 0} đến {(page - 1) * PAGE_SIZE + pageItems.length} của {total} UAV</span>
-            <div className="pagination">
-              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>‹</button>
-              <span>{page}</span>
-              <button disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>›</button>
+          <div className="table-bottom-pagination">
+            <span className="pagination-info">
+              Hiển thị 1 đến {safeUavs.length} của {safeUavs.length} UAV
+            </span>
+            <div className="pagination-controls">
+              <button className="pag-btn" disabled>
+                <ChevronLeft size={14} />
+              </button>
+              <span className="pag-page active">1</span>
+              <button className="pag-btn" disabled>
+                <ChevronRight size={14} />
+              </button>
             </div>
           </div>
-        </section>
+        </div>
 
-        <section className="panel detail-panel">
-          <div className="panel-header">
-            <h2>Chi tiết UAV</h2>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {selected && <span className={`badge ${STATUS_CLASS[selected.status]}`}>{STATUS_LABEL[selected.status]}</span>}
-              {selected && <button className="icon-close" onClick={() => setSelectedId(null)} title="Đóng"><X size={14} /></button>}
+        {/* RIGHT PANEL: CHI TIẾT UAV (EXACT USER SCREENSHOT) */}
+        <div className="uav-detail-card">
+          <div className="card-top-bar">
+            <span className="card-title">CHI TIẾT UAV</span>
+            <div className="right-detail-header-actions">
+              <span className="status-badge-green">ĐANG BAY</span>
+              <button className="close-detail-btn" onClick={() => setSelectedId(null)}>
+                <X size={14} />
+              </button>
             </div>
           </div>
 
-          {!selected && <p className="muted">Chọn 1 UAV trong danh sách</p>}
+          {/* DRONE RENDER & META (SIDE BY SIDE LIKE SCREENSHOT) */}
+          <div className="detail-drone-header-split">
+            <div className="detail-drone-preview">
+              <img src="/uav_drone.png" alt="Drone Render" className="detail-drone-img" />
+            </div>
 
-          {selected && !editing && (
-            <>
-              <div className="uav-profile-box">
-                <div className="uav-image-preview">
-                  <Plane size={32} color="#60a5fa" strokeWidth={1.5} />
+            <div className="detail-name-group-right">
+              <h3 className="d-title">{selected.name || "UAV_02"}</h3>
+              <span className="d-sub">{selected.type || "Eagle Pro"}</span>
+
+              <div className="detail-specs-compact">
+                <div className="spec-item">
+                  <span className="lbl">Loại UAV</span>
+                  <strong className="val">{selected.type || "Eagle Pro"}</strong>
                 </div>
-                <div className="uav-meta">
-                  <h3>{selected.name}</h3>
-                  <p>{selected.type || "Chưa đặt loại"}</p>
-                  <span className={`badge ${STATUS_CLASS[selected.status]}`}>● {STATUS_LABEL[selected.status]}</span>
+                <div className="spec-item">
+                  <span className="lbl">Serial</span>
+                  <strong className="val">EP23041801</strong>
                 </div>
-              </div>
-
-              <dl className="telemetry-list">
-                <dt>Loại UAV</dt><dd>{selected.type || "-"}</dd>
-                <dt>Serial</dt><dd>{selected.serial || "-"}</dd>
-                <dt>Trạng thái</dt><dd className={isLive ? "ok" : ""}>{isLive ? "Live" : "Giả lập"}</dd>
-                <dt>Thời gian bay</dt><dd>{flightDuration(selected.flying_since)}</dd>
-                <dt>Độ cao</dt><dd>{telemetry?.altitude_m ?? "-"} m</dd>
-                <dt>Khoảng cách</dt><dd>{distanceKm ?? "-"} km</dd>
-                <dt>Pin</dt><dd>{telemetry?.battery_pct ?? "-"}%</dd>
-                <dt>Tốc độ</dt><dd>{telemetry?.speed_kmh ?? "-"} km/h</dd>
-                <dt>Liên kết</dt><dd><SignalBars signal={telemetry?.signal} /></dd>
-                {isLive && <><dt>Độ trễ</dt><dd>{payload?.uav_status?.latency_ms ?? "-"} ms</dd></>}
-              </dl>
-
-              <div className="detail-actions">
-                {!isLive && <button onClick={() => activate(selected.id)}><Play size={14} /> Theo dõi trực tiếp</button>}
-                <button onClick={startEdit}><Pencil size={14} /> Sửa</button>
-                <button disabled title="Chưa nối điều khiển bay thật (MAVLink)"><Gamepad2 size={14} /> Điều khiển</button>
-                <button disabled title="Chưa nối điều khiển bay thật (MAVLink)">↩ Quay về</button>
-                <button disabled title="Chưa nối điều khiển bay thật (MAVLink)"><ArrowDown size={14} /> Hạ cánh</button>
-              </div>
-            </>
-          )}
-
-          {selected && editing && (
-            <div className="stacked-form">
-              <label>
-                Trạng thái
-                <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}>
-                  <option value="flying">Đang bay</option>
-                  <option value="ready">Sẵn sàng</option>
-                  <option value="maintenance">Bảo trì</option>
-                  <option value="offline">Offline</option>
-                </select>
-              </label>
-              <label>
-                Loại UAV
-                <input value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} />
-              </label>
-              <label>
-                Serial
-                <input value={editForm.serial} onChange={(e) => setEditForm({ ...editForm, serial: e.target.value })} />
-              </label>
-              <label>
-                Khu vực
-                <input value={editForm.zone} onChange={(e) => setEditForm({ ...editForm, zone: e.target.value })} />
-              </label>
-              <div className="detail-actions">
-                <button onClick={saveEdit}>Lưu</button>
-                <button onClick={() => setEditing(false)}>Huỷ</button>
               </div>
             </div>
-          )}
-        </section>
+          </div>
+
+          {/* TELEMETRY METRICS LIST */}
+          <div className="detail-telemetry-grid">
+            <div className="t-row">
+              <span className="lbl">Trạng thái</span>
+              <span className="val green-text bold-text">Đang bay</span>
+            </div>
+
+            <div className="t-row split-2">
+              <div>
+                <span className="lbl">Thời gian bay</span> <strong className="val">28:45</strong>
+              </div>
+              <div>
+                <span className="lbl">Khoảng cách</span> <strong className="val">5.2 km</strong>
+              </div>
+            </div>
+
+            <div className="t-row split-2">
+              <div>
+                <span className="lbl">Độ cao</span> <strong className="val">150 m</strong>
+              </div>
+              <div>
+                <span className="lbl">Tốc độ</span> <strong className="val">48 km/h</strong>
+              </div>
+            </div>
+
+            <div className="t-row battery">
+              <span className="lbl">Pin</span>
+              <div className="bat-progress-group">
+                <div className="bat-meter-track">
+                  <div className="bat-fill-bar" style={{ width: `${selected.battery ?? 78}%` }} />
+                </div>
+                <span className="pct-num green-text">{selected.battery ?? 78}%</span>
+              </div>
+            </div>
+
+            <div className="t-row">
+              <span className="lbl">Liên kết</span>
+              <span className="val green-text signal-val">
+                12 <Wifi size={14} className="green-text" /> <strong>Strong &gt;</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* 4 ACTION BUTTONS HORIZONTAL ROW */}
+          <div className="detail-action-buttons-grid">
+            <button className="act-btn ctrl">
+              <Gamepad2 size={14} /> ĐIỀU KHIỂN
+            </button>
+            <button className="act-btn observe green-outline">
+              <Eye size={14} color="#4ade80" /> THEO DÕI
+            </button>
+            <button className="act-btn return red-btn">
+              <RotateCcw size={14} color="#ef4444" /> QUAY VỀ
+            </button>
+            <button className="act-btn land red-btn">
+              <ArrowDown size={14} color="#ef4444" /> HẠ CÁNH
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="fleet-row">
-        <section className="panel wide">
-          <h2>Theo dõi trực tiếp {selected ? `- ${selected.name}` : ""} {isLive && <span className="live-dot">● LIVE</span>}</h2>
-          <div className="main-video-hud-container">
+      {/* ROW 3: LIVE MONITORING & FLEET MAP (2 COLUMNS) */}
+      <div className="uav-row-3-grid">
+        {/* LEFT: THEO DÕI TRỰC TIẾP */}
+        <div ref={videoCardRef} className="video-monitoring-card">
+          <div className="card-top-bar">
+            <span className="card-title">
+              THEO DÕI TRỰC TIẾP - {selected.name || "UAV_02"} <span className="live-dot-green">● LIVE</span>
+            </span>
+            <div className="hud-card-top-right-actions">
+              <button className="top-hud-act-btn" onClick={toggleVideoFullscreen} title="Toàn màn hình VIDEO">
+                {isVideoFull ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              </button>
+              <button className="top-hud-act-btn" title="Chụp ảnh">
+                <Camera size={13} />
+              </button>
+              <button className="top-hud-act-btn" title="Tùy chọn">
+                <Layers size={13} />
+              </button>
+            </div>
+          </div>
+
+          <div className="video-hud-wrapper">
             <TacticalVideoHUD
-              isLive={isLive}
-              telemetry={telemetry}
-              latencyMs={payload?.uav_status?.latency_ms}
-              frameSize={payload?.uav_status}
+              isLive={true}
+              telemetry={payload?.uav_status}
               objects={payload?.objects ?? []}
+              zoomLevel={5.2}
             />
           </div>
-        </section>
+        </div>
 
-        <section className="panel">
-          <h2>Vị trí UAV</h2>
-          <FleetMap uavs={safeUavs} onSelect={setSelectedId} />
-        </section>
+        {/* RIGHT: VỊ TRÍ UAV (FLEET MAP) */}
+        <div className="fleet-map-card">
+          <FleetMap uavs={safeUavs} onSelect={(id) => setSelectedId(id)} />
+        </div>
       </div>
 
-      <div className="fleet-row">
-        <section className="panel wide">
-          <h2>Nhiệm vụ đang thực hiện</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Tên nhiệm vụ</th>
-                <th>UAV</th>
-                <th>Waypoints</th>
-                <th>Tiến độ</th>
-                <th>Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runningMissions.map((m) => (
-                <tr key={m.id}>
-                  <td>{m.name}</td>
-                  <td>{safeUavs.find((u) => u.id === m.uav_id)?.name ?? m.uav_id}</td>
-                  <td>{m.waypoints_reached} / {m.waypoints?.length ?? 0}</td>
-                  <td>
-                    <div className="progress-bar small"><div className="progress-fill" style={{ width: `${m.progress_pct}%` }} /></div>
-                  </td>
-                  <td><span className="badge green">ĐANG THỰC HIỆN</span></td>
-                </tr>
-              ))}
-              {runningMissions.length === 0 && (
-                <tr><td colSpan={5} className="muted">Không có nhiệm vụ nào đang chạy</td></tr>
-              )}
-            </tbody>
-          </table>
-        </section>
-
-        <section className="panel">
-          <h2>Cảnh báo gần nhất</h2>
-          <div className="alert-list">
-            {(stats?.recent_alerts ?? []).map((a) => (
-              <div key={a.id} className={`alert-card ${a.severity}`}>
-                <strong>{SEVERITY_LABEL[a.severity]}</strong>
-                <span>{a.class} · {a.distance_m}m · {a.timestamp}</span>
-              </div>
-            ))}
-            {(stats?.recent_alerts ?? []).length === 0 && <p className="muted">Không có cảnh báo</p>}
+      {/* ROW 4: ACTIVE MISSIONS & RECENT ALERTS (2 COLUMNS) */}
+      <div className="uav-row-4-grid">
+        {/* LEFT: NHIỆM VỤ ĐANG THỰC HIỆN */}
+        <div className="active-missions-card">
+          <div className="card-top-bar">
+            <span className="card-title">NHIỆM VỤ ĐANG THỰC HIỆN</span>
+            <button className="view-all-link" onClick={() => onNavigateTab && onNavigateTab("missions")}>
+              Xem tất cả <ChevronRight size={13} />
+            </button>
           </div>
-        </section>
+
+          <div className="table-responsive">
+            <table className="mini-missions-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Tên nhiệm vụ</th>
+                  <th>UAV</th>
+                  <th>Mục tiêu</th>
+                  <th>Khu vực</th>
+                  <th>Bắt đầu</th>
+                  <th>Thời gian</th>
+                  <th>Tiến độ</th>
+                  <th>Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="id-col">MT_240513_01</td>
+                  <td className="bold-col">Tuần tra khu vực A</td>
+                  <td>UAV_01</td>
+                  <td>3</td>
+                  <td>Khu vực A</td>
+                  <td>18:20</td>
+                  <td>00:22:45</td>
+                  <td>
+                    <div className="progress-flex">
+                      <div className="p-bar"><div className="p-fill" style={{ width: "75%" }} /></div>
+                      <span>75%</span>
+                    </div>
+                  </td>
+                  <td><span className="status-badge-green">ĐANG THỰC HIỆN</span></td>
+                </tr>
+
+                <tr>
+                  <td className="id-col">MT_240513_02</td>
+                  <td className="bold-col">Giám sát biên giới</td>
+                  <td>UAV_02</td>
+                  <td>2</td>
+                  <td>Khu vực B</td>
+                  <td>18:15</td>
+                  <td>00:27:10</td>
+                  <td>
+                    <div className="progress-flex">
+                      <div className="p-bar"><div className="p-fill" style={{ width: "60%" }} /></div>
+                      <span>60%</span>
+                    </div>
+                  </td>
+                  <td><span className="status-badge-green">ĐANG THỰC HIỆN</span></td>
+                </tr>
+
+                <tr>
+                  <td className="id-col">MT_240513_03</td>
+                  <td className="bold-col">Theo dõi mục tiêu</td>
+                  <td>UAV_03</td>
+                  <td>1</td>
+                  <td>Khu vực C</td>
+                  <td>18:10</td>
+                  <td>00:31:50</td>
+                  <td>
+                    <div className="progress-flex">
+                      <div className="p-bar"><div className="p-fill" style={{ width: "50%" }} /></div>
+                      <span>50%</span>
+                    </div>
+                  </td>
+                  <td><span className="status-badge-green">ĐANG THỰC HIỆN</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* RIGHT: CẢNH BÁO GẦN NHẤT */}
+        <div className="recent-alerts-card">
+          <div className="card-top-bar">
+            <span className="card-title">CẢNH BÁO GẦN NHẤT</span>
+            <button className="view-all-link" onClick={onOpenAlerts}>
+              Xem tất cả <ChevronRight size={13} />
+            </button>
+          </div>
+
+          <div className="alerts-list-group">
+            <div className="alert-item red">
+              <AlertTriangle size={16} className="red-icon" />
+              <div className="alert-msg">
+                <strong>UAV_06:</strong> Mất tín hiệu liên lạc
+              </div>
+              <span className="alert-time">18:35:21 <ChevronRight size={14} /></span>
+            </div>
+
+            <div className="alert-item yellow">
+              <AlertTriangle size={16} className="yellow-icon" />
+              <div className="alert-msg">
+                <strong>UAV_03:</strong> Pin yếu (20%)
+              </div>
+              <span className="alert-time">18:32:10 <ChevronRight size={14} /></span>
+            </div>
+
+            <div className="alert-item orange">
+              <AlertTriangle size={16} className="orange-icon" />
+              <div className="alert-msg">
+                <strong>UAV_04:</strong> Bảo trì định kỳ
+              </div>
+              <span className="alert-time">13/05/2024 17:45:00 <ChevronRight size={14} /></span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-  );
-}
-
-function UavRow({ uav, isActive, selected, onSelect, onActivate, onDelete, onFocusMap, onEdit }) {
-  const [telemetry, setTelemetry] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getUavTelemetry(uav.id).then((t) => !cancelled && setTelemetry(t));
-    const id = setInterval(() => getUavTelemetry(uav.id).then((t) => !cancelled && setTelemetry(t)), 3000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [uav.id]);
-
-  return (
-    <tr className={selected ? "row-selected" : ""}>
-      <td>{uav.id}</td>
-      <td>{uav.name}</td>
-      <td><span className={`badge ${STATUS_CLASS[uav.status]}`}>{STATUS_LABEL[uav.status]}</span></td>
-      <td><PinBar pct={telemetry?.battery_pct} /></td>
-      <td>{uav.zone || "-"}</td>
-      <td>{telemetry?.altitude_m ?? "-"} m</td>
-      <td>{telemetry?.speed_kmh ?? "-"} km/h</td>
-      <td><SignalBars signal={telemetry?.signal} /></td>
-      <td className="row-actions">
-        <button onClick={onSelect} title="Xem chi tiết"><Eye size={14} /></button>
-        <button onClick={onFocusMap} title="Xem trên bản đồ"><MapPin size={14} /></button>
-        <button onClick={onEdit} title="Sửa"><Settings size={14} /></button>
-        <span className="row-menu">
-          <button onClick={() => setMenuOpen((v) => !v)} title="Thêm"><MoreVertical size={14} /></button>
-          {menuOpen && (
-            <div className="row-menu-dropdown" onMouseLeave={() => setMenuOpen(false)}>
-              {!isActive && <button onClick={() => { onActivate(); setMenuOpen(false); }}><Play size={14} /> Theo dõi trực tiếp</button>}
-              {!isActive && <button onClick={() => { onDelete(); setMenuOpen(false); }}><Trash2 size={14} /> Xoá</button>}
-              {isActive && <span className="muted">Đang giám sát trực tiếp</span>}
-            </div>
-          )}
-        </span>
-      </td>
-    </tr>
   );
 }

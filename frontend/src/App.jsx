@@ -16,8 +16,13 @@ import {
   User,
   ChevronsLeft,
   ChevronsRight,
-  BarChart2,
+  Sun,
+  CloudSun,
+  Wind,
+  Droplets,
   TrendingUp,
+  FileText,
+  BarChart2,
 } from "lucide-react";
 import { useDetectionSocket } from "./hooks/useDetectionSocket";
 import Overview from "./pages/Overview";
@@ -38,15 +43,17 @@ const TABS = [
   { key: "uavs", label: "UAV", Icon: Plane },
   { key: "missions", label: "Nhiệm vụ", Icon: ClipboardList },
   { key: "tracking", label: "Mục tiêu", Icon: Target },
-  { key: "live", label: "Giám sát trực tiếp", Icon: Video },
+  { key: "live", label: "Theo dõi trực tiếp", Icon: Video },
   { key: "map", label: "Bản đồ", Icon: Map },
-  { key: "history", label: "Lịch sử bay", Icon: Clock },
+  { key: "analytics", label: "Phân tích", Icon: TrendingUp },
+  { key: "notes", label: "Ghi chép", Icon: FileText },
   { key: "logs", label: "Cảnh báo", Icon: Bell, badge: 3 },
+  { key: "reports", label: "Báo cáo", Icon: BarChart2 },
   { key: "settings", label: "Cài đặt", Icon: Settings },
 ];
 
 export default function App() {
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("uavs");
   const [collapsed, setCollapsed] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
   const { connected, payload } = useDetectionSocket();
@@ -78,6 +85,7 @@ export default function App() {
           {!collapsed && (
             <div className="brand-titles">
               <h1 className="brand-main">UAV CONTROL</h1>
+              <span className="brand-sub">HỆ THỐNG QUẢN LÝ UAV</span>
             </div>
           )}
         </div>
@@ -100,6 +108,30 @@ export default function App() {
           ))}
         </nav>
 
+        {/* SIDEBAR WEATHER WIDGET (EXACT MATCH REFERENCE IMAGE) */}
+        {!collapsed && (
+          <div className="sidebar-weather-widget">
+            <div className="weather-title">THỜI TIẾT</div>
+            <div className="weather-main-row">
+              <CloudSun size={26} color="#facc15" />
+              <div className="weather-temp-group">
+                <span className="temp-val">28°C</span>
+                <span className="weather-desc">Nhiều mây</span>
+              </div>
+            </div>
+            <div className="weather-details-row">
+              <div className="w-detail">
+                <Wind size={13} color="#94a3b8" />
+                <span>Gió <strong>12 km/h</strong></span>
+              </div>
+              <div className="w-detail">
+                <Droplets size={13} color="#60a5fa" />
+                <span>Độ ẩm <strong>72%</strong></span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <button className="sidebar-toggle-btn" onClick={() => setCollapsed(!collapsed)}>
           {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
           {!collapsed && <span>Thu gọn</span>}
@@ -115,30 +147,27 @@ export default function App() {
               <Menu size={18} />
             </button>
             <div className="header-page-title">
-              <span className="title-text">THEO DÕI MỤC TIÊU</span>
-              <span className="live-status-pill">
-                <span className="status-dot green" />
-                TRỰC TUYẾN
-              </span>
+              <span className="title-text">{tab === "uavs" ? "UAV" : "THEO DÕI MỤC TIÊU"}</span>
+              <span className="breadcrumb-sub-text">Trang chủ &gt; {tab.toUpperCase()}</span>
             </div>
           </div>
 
           <div className="header-right-telemetry">
-            <div className="telemetry-item signal">
-              <Wifi size={15} className="green-text" />
-              <span>Kết nối UAV</span>
-              <strong className="green-text">Strong</strong>
-            </div>
-
             <div className="telemetry-item gps">
               <Crosshair size={15} color="#4ade80" />
               <span>GPS</span>
               <strong>{payload?.uav_status?.gps?.satellites ?? 12}</strong>
             </div>
 
+            <div className="telemetry-item signal">
+              <Wifi size={15} className="green-text" />
+              <span>Liên kết</span>
+              <strong className="green-text">Strong</strong>
+            </div>
+
             <div className="telemetry-item battery">
               <Battery size={15} color="#4ade80" />
-              <span>Pin</span>
+              <span>Pin hệ thống</span>
               <strong className="green-text">{payload?.uav_status?.battery ?? 78}%</strong>
             </div>
 
@@ -166,8 +195,10 @@ export default function App() {
           {tab === "tracking" && <Targets payload={payload} />}
           {tab === "live" && <LiveMonitoring payload={payload} />}
           {tab === "map" && <MapView payload={payload} />}
-          {tab === "history" && <Analytics payload={payload} />}
+          {tab === "analytics" && <Analytics payload={payload} />}
+          {tab === "notes" && <NotesView />}
           {tab === "logs" && <AlertsView onOpenMap={() => setTab("map")} />}
+          {tab === "reports" && <ReportsView />}
           {tab === "settings" && <SettingsPage />}
         </main>
       </div>

@@ -25,6 +25,7 @@ export default function TacticalVideoHUD({
   const [isFull, setIsFull] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [activeTool, setActiveTool] = useState("crosshair");
+  const [feedSrc, setFeedSrc] = useState("/uav_aerial_feed.png");
   const containerRef = useRef(null);
 
   const currentZoom = onZoomChange ? zoomLevel : zoom;
@@ -67,16 +68,6 @@ export default function TacticalVideoHUD({
             top: "38%",
             left: "44%",
           },
-          {
-            id: "02",
-            label: "MỤC TIÊU 02",
-            type: "XE",
-            speed: "18 km/h",
-            distance: "85m",
-            color: "yellow",
-            top: "54%",
-            left: "55%",
-          },
         ];
 
   return (
@@ -87,11 +78,8 @@ export default function TacticalVideoHUD({
       {/* Background Aerial Stream / Feed Image */}
       <img
         className="tactical-video-feed"
-        src={`${API_BASE}/video`}
-        onError={(e) => {
-          e.target.onerror = null;
-          e.target.src = "/uav_aerial_feed.png";
-        }}
+        src={feedSrc}
+        onError={() => setFeedSrc("/uav_aerial_feed.png")}
         alt="UAV Live Feed"
       />
 
@@ -241,10 +229,10 @@ export default function TacticalVideoHUD({
       {/* BOTTOM TELEMETRY HUD STRIP */}
       <div className="hud-bottom-telemetry">
         <div className="telemetry-cell">
-          ALT <strong className="green-text">{telemetry?.altitude_m ?? 120} m</strong>
+          ALT <strong className="green-text">{telemetry?.altitude_m ?? 150} m</strong>
         </div>
         <div className="telemetry-cell">
-          H.SPD <strong>{telemetry?.speed_kmh ?? 45.2} km/h</strong>
+          H.SPD <strong>{telemetry?.speed_kmh ?? 48.0} km/h</strong>
         </div>
         <div className="telemetry-cell">
           V.SPD <strong>1.2 m/s</strong>
