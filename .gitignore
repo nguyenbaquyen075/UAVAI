@@ -1,0 +1,11 @@
+backend/venv/
+backend/__pycache__/
+backend/*.db
+backend/settings.json
+backend/yolov8n.pt
+backend/sample_video.mp4
+
+frontend/node_modules/
+frontend/dist/
+
+.DS_Store
