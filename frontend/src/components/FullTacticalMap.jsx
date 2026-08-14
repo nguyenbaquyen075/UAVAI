@@ -41,7 +41,18 @@ const wpNumberIcon = (num, color = "#60a5fa") =>
     iconAnchor: [9, 9],
   });
 
-export default function FullTacticalMap({ onCursorMove, activeLayers }) {
+const poiIcon = (color = "#a855f7") =>
+  L.divIcon({
+    className: "map-tactical-marker",
+    html: `<div class="poi-pin" style="border-color:${color}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5"><polygon points="12 2 15 9 22 9 17 14 19 21 12 17 5 21 7 14 2 9 9 9 12 2"/></svg></div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  });
+
+// ponytail: uavs/targets/pois là dữ liệu THẬT (UAV: telemetry giả lập nhưng vị trí lấy từ backend;
+// target: toạ độ ƯỚC TÍNH xem backend/telemetry.py; poi: bảng pois thật). Vùng cấm bay/vùng quan tâm
+// bên dưới vẫn là hình minh hoạ tĩnh — chưa có tính năng vẽ/lưu địa giới thật (chưa yêu cầu).
+export default function FullTacticalMap({ onCursorMove, activeLayers, uavs = [], targets = [], pois = [] }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef({
@@ -51,6 +62,7 @@ export default function FullTacticalMap({ onCursorMove, activeLayers }) {
     hazard: null,
     uavs: null,
     targets: null,
+    poi: null,
   });
 
   const [mapMode, setMapMode] = useState("2D"); // 2D | 3D
@@ -81,13 +93,15 @@ export default function FullTacticalMap({ onCursorMove, activeLayers }) {
     const hazardGroup = L.featureGroup().addTo(map);
     const uavGroup = L.featureGroup().addTo(map);
     const targetGroup = L.featureGroup().addTo(map);
+    const poiGroup = L.featureGroup().addTo(map);
 
     layersRef.current.nofly = noflyGroup;
     layersRef.current.hazard = hazardGroup;
     layersRef.current.uavs = uavGroup;
     layersRef.current.targets = targetGroup;
+    layersRef.current.poi = poiGroup;
 
-    // --- 1. Drawn No-Fly Zone (Yellow Polygon) ---
+    // --- Vùng cấm bay minh hoạ (chưa có tính năng lưu địa giới thật) ---
     const noFlyCoords = [
       [21.0360, 105.8570],
       [21.0385, 105.8600],
@@ -102,98 +116,16 @@ export default function FullTacticalMap({ onCursorMove, activeLayers }) {
       dashArray: "6, 6",
     }).addTo(noflyGroup);
 
-    // Warning marker on No-Fly zone
     L.marker([21.0355, 105.8598], {
       icon: L.divIcon({
         className: "nofly-badge-marker",
-        html: `<div class="nofly-badge">⚠️</div>`,
+        html: `<div class="nofly-badge"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></div>`,
         iconSize: [24, 24],
       }),
     }).addTo(noflyGroup);
 
-    // --- 2. Interest Zone (Blue Polygon with Shield) ---
-    const interestCoords = [
-      [21.0230, 105.8450],
-      [21.0260, 105.8490],
-      [21.0210, 105.8505],
-      [21.0185, 105.8465],
-    ];
-    L.polygon(interestCoords, {
-      color: "#3b82f6",
-      fillColor: "#3b82f6",
-      fillOpacity: 0.2,
-      weight: 2,
-    }).addTo(hazardGroup);
-
-    L.marker([21.0220, 105.8478], {
-      icon: L.divIcon({
-        className: "shield-badge-marker",
-        html: `<div class="shield-badge">🛡️</div>`,
-        iconSize: [24, 24],
-      }),
-    }).addTo(hazardGroup);
-
-    // --- 3. UAVs & Flight Trajectories ---
-    // UAV_01
-    const uav1Pos = [21.0345, 105.8510];
-    L.marker(uav1Pos, { icon: uavMarkerIcon("UAV_01", "#60a5fa") }).addTo(uavGroup);
-
-    // UAV_02
-    const uav2Pos = [21.0285, 105.8480];
-    L.marker(uav2Pos, { icon: uavMarkerIcon("UAV_02", "#60a5fa") }).addTo(uavGroup);
-
-    // UAV_03
-    const uav3Pos = [21.0210, 105.8610];
-    L.marker(uav3Pos, { icon: uavMarkerIcon("UAV_03", "#4ade80") }).addTo(uavGroup);
-
-    // Blue Flight Path (UAV 1 & 2)
-    const bluePath = [
-      [21.0345, 105.8510],
-      [21.0320, 105.8495],
-      [21.0300, 105.8470],
-      [21.0285, 105.8480],
-      [21.0255, 105.8520],
-    ];
-    L.polyline(bluePath, { color: "#60a5fa", weight: 3 }).addTo(uavGroup);
-
-    bluePath.forEach((pt, idx) => {
-      L.marker(pt, { icon: wpNumberIcon(idx + 1, "#3b82f6") }).addTo(uavGroup);
-    });
-
-    // Green Flight Path (UAV 3)
-    const greenPath = [
-      [21.0210, 105.8610],
-      [21.0240, 105.8580],
-      [21.0260, 105.8550],
-      [21.0275, 105.8580],
-    ];
-    L.polyline(greenPath, { color: "#4ade80", weight: 3 }).addTo(uavGroup);
-
-    greenPath.forEach((pt, idx) => {
-      L.marker(pt, { icon: wpNumberIcon(idx + 1, "#22c55e") }).addTo(uavGroup);
-    });
-
-    // --- 4. Targets & Warning Radii ---
-    // TGT_001
-    L.marker([21.0320, 105.8565], { icon: tgtMarkerIcon("TGT_001") }).addTo(targetGroup);
-
-    // TGT_002 with Danger Radius Circle
-    const tgt2Pos = [21.0275, 105.8580];
-    L.marker(tgt2Pos, { icon: tgtMarkerIcon("TGT_002") }).addTo(targetGroup);
-    L.circle(tgt2Pos, {
-      radius: 250,
-      color: "#ef4444",
-      fillColor: "#ef4444",
-      fillOpacity: 0.1,
-      dashArray: "4, 6",
-      weight: 1.5,
-    }).addTo(targetGroup);
-
-    // Connect line from Green Waypoint to TGT_002
-    L.polyline([greenPath[greenPath.length - 1], tgt2Pos], { color: "#ef4444", weight: 2, dashArray: "4, 4" }).addTo(targetGroup);
-
-    // TGT_003
-    L.marker([21.0215, 105.8525], { icon: tgtMarkerIcon("TGT_003") }).addTo(targetGroup);
+    mapRef.current = map;
+    mapRef.current._groups = { uavGroup, targetGroup, poiGroup };
 
     // --- Mouse Move Listener for Cursor Coordinates ---
     map.on("mousemove", (e) => {
@@ -201,12 +133,9 @@ export default function FullTacticalMap({ onCursorMove, activeLayers }) {
         onCursorMove({
           lat: e.latlng.lat.toFixed(6),
           lng: e.latlng.lng.toFixed(6),
-          alt: Math.floor(40 + Math.random() * 15),
         });
       }
     });
-
-    mapRef.current = map;
 
     return () => {
       map.remove();
@@ -217,15 +146,52 @@ export default function FullTacticalMap({ onCursorMove, activeLayers }) {
   // Sync active layer toggles
   useEffect(() => {
     if (!layersRef.current || !mapRef.current) return;
-    const { nofly, hazard, uavs, targets } = layersRef.current;
+    const { nofly, hazard, uavs: uavLayer, targets: targetLayer, poi } = layersRef.current;
 
     if (activeLayers) {
       if (nofly) activeLayers.nofly ? mapRef.current.addLayer(nofly) : mapRef.current.removeLayer(nofly);
       if (hazard) activeLayers.hazard ? mapRef.current.addLayer(hazard) : mapRef.current.removeLayer(hazard);
-      if (uavs) activeLayers.uavs ? mapRef.current.addLayer(uavs) : mapRef.current.removeLayer(uavs);
-      if (targets) activeLayers.targets ? mapRef.current.addLayer(targets) : mapRef.current.removeLayer(targets);
+      if (uavLayer) activeLayers.uavs ? mapRef.current.addLayer(uavLayer) : mapRef.current.removeLayer(uavLayer);
+      if (targetLayer) activeLayers.targets ? mapRef.current.addLayer(targetLayer) : mapRef.current.removeLayer(targetLayer);
+      if (poi) activeLayers.poi ? mapRef.current.addLayer(poi) : mapRef.current.removeLayer(poi);
     }
   }, [activeLayers]);
+
+  // Redraw UAV markers khi telemetry cập nhật
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map._groups) return;
+    const { uavGroup } = map._groups;
+    uavGroup.clearLayers();
+    uavs.filter((u) => u.lat != null).forEach((u) => {
+      L.marker([u.lat, u.lon], { icon: uavMarkerIcon(u.name, u.isActive ? "#4ade80" : "#60a5fa") }).addTo(uavGroup);
+    });
+  }, [uavs]);
+
+  // Redraw target markers (toạ độ ước tính)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map._groups) return;
+    const { targetGroup } = map._groups;
+    targetGroup.clearLayers();
+    targets.filter((t) => t.lat != null).forEach((t) => {
+      L.marker([t.lat, t.lon], { icon: tgtMarkerIcon(`${t.class}#${t.track_id}`) }).addTo(targetGroup);
+      if (t.threat_level === "high") {
+        L.circle([t.lat, t.lon], { radius: 250, color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.1, dashArray: "4, 6", weight: 1.5 }).addTo(targetGroup);
+      }
+    });
+  }, [targets]);
+
+  // Redraw POI markers (bảng pois thật)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map._groups) return;
+    const { poiGroup } = map._groups;
+    poiGroup.clearLayers();
+    pois.forEach((p) => {
+      L.marker([p.lat, p.lon], { icon: poiIcon() }).addTo(poiGroup).bindTooltip(p.name);
+    });
+  }, [pois]);
 
   return (
     <div className="full-tactical-map-wrap">

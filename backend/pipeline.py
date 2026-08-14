@@ -189,6 +189,8 @@ class DetectionPipeline:
                     "connection": "ok",
                     "latency_ms": round((time.time() - ts) * 1000, 1),
                     "gps": self.telemetry.position(self.active_uav_id) if self.telemetry else None,
+                    "frame_width": frame.shape[1],
+                    "frame_height": frame.shape[0],
                 },
             }
 

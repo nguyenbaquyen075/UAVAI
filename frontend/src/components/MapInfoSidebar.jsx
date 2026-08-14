@@ -1,9 +1,11 @@
+import { X, Plane, Target } from "lucide-react";
+
 export default function MapInfoSidebar({ cursorPos, layers, onToggleLayer }) {
   return (
     <aside className="map-info-sidebar">
       <div className="sidebar-header-row">
         <h3 className="sidebar-title">THÔNG TIN BẢN ĐỒ</h3>
-        <button className="close-btn" title="Đóng panel">✕</button>
+        <button className="close-btn" title="Đóng panel"><X size={14} /></button>
       </div>
 
       <div className="sidebar-scroll-content">
@@ -13,44 +15,20 @@ export default function MapInfoSidebar({ cursorPos, layers, onToggleLayer }) {
           <div className="coord-grid">
             <div className="coord-item">
               <span className="lbl">Lat:</span>
-              <strong className="val">{cursorPos?.lat ?? "21.027123"}° N</strong>
+              <strong className="val">{cursorPos?.lat ?? "-"}° N</strong>
             </div>
             <div className="coord-item">
               <span className="lbl">Lng:</span>
-              <strong className="val">{cursorPos?.lng ?? "105.854567"}° E</strong>
-            </div>
-            <div className="coord-item">
-              <span className="lbl">Độ cao:</span>
-              <strong className="val">{cursorPos?.alt ?? "48"} m</strong>
+              <strong className="val">{cursorPos?.lng ?? "-"}° E</strong>
             </div>
           </div>
         </div>
 
-        {/* Section 2: Regional Information */}
+        {/* Section 2: Regional Information — chưa tích hợp tra cứu địa danh (reverse geocoding),
+            không bịa số diện tích/dân cư cho vị trí con trỏ */}
         <div className="sidebar-section">
           <div className="section-label">THÔNG TIN KHU VỰC</div>
-          <div className="info-list-stacked">
-            <div className="info-row">
-              <span>Địa điểm:</span>
-              <strong>Khu công nghiệp Bắc Thăng Long</strong>
-            </div>
-            <div className="info-row">
-              <span>Quận/Huyện:</span>
-              <strong>Đông Anh</strong>
-            </div>
-            <div className="info-row">
-              <span>Thành phố:</span>
-              <strong>Hà Nội</strong>
-            </div>
-            <div className="info-row">
-              <span>Diện tích:</span>
-              <strong>12.45 km²</strong>
-            </div>
-            <div className="info-row">
-              <span>Dân cư:</span>
-              <strong>~ 18,250 người</strong>
-            </div>
-          </div>
+          <p className="muted" style={{ fontSize: "11px" }}>Chưa tích hợp tra cứu địa danh (reverse geocoding).</p>
         </div>
 
         {/* Section 3: Map Layers */}
@@ -144,7 +122,7 @@ export default function MapInfoSidebar({ cursorPos, layers, onToggleLayer }) {
           <div className="section-label">CHÚ THÍCH</div>
           <div className="legend-list">
             <div className="legend-item">
-              <span className="lgd-icon uav-icon">🛸</span>
+              <span className="lgd-icon uav-icon"><Plane size={14} /></span>
               <span>UAV đang bay</span>
             </div>
             <div className="legend-item">
@@ -152,7 +130,7 @@ export default function MapInfoSidebar({ cursorPos, layers, onToggleLayer }) {
               <span>Lộ trình bay</span>
             </div>
             <div className="legend-item">
-              <span className="lgd-icon target-icon">🎯</span>
+              <span className="lgd-icon target-icon"><Target size={14} /></span>
               <span>Mục tiêu</span>
             </div>
             <div className="legend-item">

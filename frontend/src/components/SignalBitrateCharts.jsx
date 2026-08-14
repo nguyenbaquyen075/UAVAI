@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+// ponytail: chưa có modem/RF thật báo bitrate — random-walk minh hoạ, không phải số đo.
+// Khi có modem thật, thay bằng đọc downlink/uplink thật thay vì Math.random().
 export default function SignalBitrateCharts() {
   const [downlink, setDownlink] = useState(25.6);
   const [uplink, setUplink] = useState(8.6);
@@ -41,6 +43,7 @@ export default function SignalBitrateCharts() {
   return (
     <div className="signal-chart-panel">
       <div className="panel-title">TRUYỀN TÍN HIỆU</div>
+      <p className="muted" style={{ fontSize: "11px", margin: "0 0 6px" }}>Minh hoạ — chưa có modem/RF thật báo bitrate.</p>
       <div className="signal-rows">
         {/* Downlink */}
         <div className="signal-row">

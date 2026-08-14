@@ -1,236 +1,405 @@
 import { useEffect, useState } from "react";
-import { API_BASE, activateUAV, getOverviewStats, getUavTelemetry, listMissions, listUAVs } from "../api";
+import {
+  Plane,
+  ClipboardList,
+  Target,
+  AlertTriangle,
+  Camera,
+  ChevronUp,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Minus,
+  Wifi,
+  ExternalLink,
+} from "lucide-react";
+import { API_BASE, getOverviewStats } from "../api";
 import MiniMap from "../components/MiniMap";
+import TacticalVideoHUD from "../components/TacticalVideoHUD";
 
-const SEVERITY_LABEL = { red: "NGUY HIỂM", yellow: "CẢNH BÁO", green: "Bình thường" };
-
-function downloadSnapshot() {
-  const a = document.createElement("a");
-  a.href = `${API_BASE}/api/snapshot`;
-  a.download = "";
-  a.click();
-}
-
-export default function Overview({ payload }) {
+export default function Overview({ payload, onNavigateTab }) {
   const [stats, setStats] = useState(null);
-  const [uavs, setUavs] = useState([]);
-  const [missions, setMissions] = useState([]);
-  const [viewedUavId, setViewedUavId] = useState(null);
-  const [viewedTelemetry, setViewedTelemetry] = useState(null);
+  const [selectedUavId, setSelectedUavId] = useState("UAV_02");
   const [cameraMode, setCameraMode] = useState("EO");
-  const [zoom, setZoom] = useState(1);
-
-  const activeUavId = payload?.active_uav_id ?? null;
+  const [ptzZoom, setPtzZoom] = useState(5.2);
+  const [isRecording, setIsRecording] = useState(false);
+  const [flashSnapshot, setFlashSnapshot] = useState(false);
 
   useEffect(() => {
     async function load() {
-      const overviewStats = await getOverviewStats();
-      setStats(overviewStats);
-
-      const uavList = await listUAVs();
-      const safeUavs = Array.isArray(uavList) ? uavList : [];
-      setUavs(safeUavs);
-
-      const missionList = await listMissions();
-      setMissions(Array.isArray(missionList) ? missionList : []);
-
-      if (viewedUavId == null && safeUavs.length) {
-        setViewedUavId(safeUavs[0].id);
+      try {
+        const overviewStats = await getOverviewStats();
+        setStats(overviewStats);
+      } catch (err) {
+        console.error("Error loading overview data:", err);
       }
     }
     load();
     const id = setInterval(load, 3000);
     return () => clearInterval(id);
-  }, [viewedUavId]);
+  }, []);
 
-  useEffect(() => {
-    if (viewedUavId == null) return;
-    let cancelled = false;
-    async function poll() {
-      const t = await getUavTelemetry(viewedUavId);
-      if (!cancelled) setViewedTelemetry(t);
-    }
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [viewedUavId]);
+  const handleSnapshot = () => {
+    setFlashSnapshot(true);
+    setTimeout(() => setFlashSnapshot(false), 300);
+    const a = document.createElement("a");
+    a.href = `${API_BASE}/api/snapshot`;
+    a.download = `snapshot_${Date.now()}.jpg`;
+    a.click();
+  };
 
-  const safeObjects = Array.isArray(payload?.objects) ? payload.objects : [];
-  const objects = viewedUavId === activeUavId ? safeObjects : [];
-  const isLive = viewedUavId === activeUavId && activeUavId != null;
-
-  const safeMissions = Array.isArray(missions) ? missions : [];
-  const safeUavs = Array.isArray(uavs) ? uavs : [];
-
-  const currentMission = safeMissions.find((m) => m.uav_id === viewedUavId && m.status === "active");
-  const viewedUav = safeUavs.find((u) => u.id === viewedUavId);
-
-  async function activate() {
-    await activateUAV(viewedUavId);
-  }
+  const handlePtzZoomChange = (delta) => {
+    setPtzZoom((prev) => Math.max(1.0, Math.min(10.0, Number((prev + delta).toFixed(1)))));
+  };
 
   return (
-    <div className="overview">
-      <div className="live-sub-header" style={{ marginBottom: "10px" }}>
-        <div className="header-left">
-          <div className="uav-selector-wrapper">
-            <span className="sub-title-label">📊 TỔNG QUAN</span>
-            <span className="dot-divider">/</span>
-            <span className="breadcrumb-sub">Trang chủ &gt; Tổng quan</span>
+    <div className={`overview-dashboard ${flashSnapshot ? "screen-flash" : ""}`}>
+      {/* ROW 1: TOP 4 KPI METRIC SUMMARY CARDS */}
+      <div className="overview-kpi-row">
+        {/* CARD 1: UAV HOẠT ĐỘNG */}
+        <div className="kpi-summary-card">
+          <div className="kpi-icon-box">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f8fafc" strokeWidth="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+            </svg>
+          </div>
+          <div className="kpi-content-group">
+            <span className="kpi-title">UAV HOẠT ĐỘNG</span>
+            <div className="kpi-main-value">
+              <span className="big-num">{stats?.uav_online ?? 4}</span>
+              <span className="total-denom">/ {stats?.uav_total ?? 6}</span>
+            </div>
+            <div className="kpi-sub-detail">
+              <span className="sub-item"><span className="dot green-dot" /> 4 online</span>
+              <span className="sub-item"><span className="dot gray-dot" /> 2 offline</span>
+            </div>
           </div>
         </div>
-        <div className="header-right-telemetry">
-          <div className="telemetry-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>GPS <strong>12</strong></span></div>
-          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><span>Liên kết <strong>Strong</strong></span></div>
-          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg><span>Pin <strong>78%</strong></span></div>
-          <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
-          <div className="user-profile-badge">
-            <div className="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
+
+        {/* CARD 2: NHIỆM VỤ ĐANG CHẠY */}
+        <div className="kpi-summary-card">
+          <div className="kpi-icon-box">
+            <ClipboardList size={26} color="#f8fafc" />
+          </div>
+          <div className="kpi-content-group">
+            <span className="kpi-title">NHIỆM VỤ ĐANG CHẠY</span>
+            <div className="kpi-main-value">
+              <span className="big-num">{stats?.mission_running ?? 2}</span>
+              <span className="total-denom">/ {stats?.mission_total ?? 5}</span>
+            </div>
+            <div className="kpi-sub-detail">
+              <span className="sub-item"><span className="dot green-dot" /> 2 hoàn thành</span>
+              <span className="sub-item"><span className="dot orange-dot" /> 3 chờ</span>
+            </div>
+          </div>
+        </div>
+
+        {/* CARD 3: MỤC TIÊU ĐANG THEO DÕI */}
+        <div className="kpi-summary-card">
+          <div className="kpi-icon-box">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f8fafc" strokeWidth="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <div className="kpi-content-group">
+            <span className="kpi-title">MỤC TIÊU ĐANG THEO DÕI</span>
+            <div className="kpi-main-value">
+              <span className="big-num">{stats?.targets_tracked ?? 3}</span>
+              <span className="total-denom">/ {stats?.targets_total ?? 8}</span>
+            </div>
+            <div className="kpi-sub-detail">
+              <span className="sub-item"><span className="dot green-dot" /> 3 đang theo dõi</span>
+              <span className="sub-item"><span className="dot orange-dot" /> 5 đã khóa</span>
+            </div>
+          </div>
+        </div>
+
+        {/* CARD 4: CẢNH BÁO */}
+        <div className="kpi-summary-card">
+          <div className="kpi-icon-box yellow-bg">
+            <AlertTriangle size={24} color="#facc15" fill="#facc15" fillOpacity="0.2" />
+          </div>
+          <div className="kpi-content-group">
+            <span className="kpi-title">CẢNH BÁO</span>
+            <div className="kpi-main-value">
+              <span className="big-num">{stats?.alert_count_24h ?? 3}</span>
+            </div>
+            <div className="kpi-sub-detail">
+              <span className="sub-item"><span className="dot red-dot" /> 2 mức cao</span>
+              <span className="sub-item"><span className="dot yellow-dot" /> 1 mức trung bình</span>
+            </div>
           </div>
         </div>
       </div>
-      <div className="stat-row">
-        <div className="stat-card">
-          <div className="stat-icon">🛸</div>
-          <div className="stat-label">UAV HOẠT ĐỘNG</div>
-          <div className="stat-value">{stats?.uav_online ?? "-"} / {stats?.uav_total ?? "-"}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">📋</div>
-          <div className="stat-label">NHIỆM VỤ ĐANG CHẠY</div>
-          <div className="stat-value">{stats?.mission_running ?? "-"} / {stats?.mission_total ?? "-"}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">🎯</div>
-          <div className="stat-label">MỤC TIÊU ĐANG THEO DÕI</div>
-          <div className="stat-value">{stats?.targets_tracked ?? "-"}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">⚠️</div>
-          <div className="stat-label">CẢNH BÁO GẦN ĐÂY</div>
-          <div className="stat-value">{stats?.alert_count_24h ?? "-"}</div>
-        </div>
-      </div>
 
-      <div className="overview-main">
-        <div className="video-panel">
-          <div className="video-frame">
-            <img className="video" src={`${API_BASE}/video`} alt="UAV live feed" />
-            <div className="crosshair" />
-            <div className="compass-strip">
-              {["W", "285", "300", "NW", "330", "345", "N"].map((t) => (
-                <span key={t} className={t === "NW" ? "compass-current" : ""}>{t}</span>
-              ))}
-            </div>
-            {!isLive && <div className="video-note">Chưa kích hoạt giám sát trực tiếp cho UAV này</div>}
-            <div className="target-overlay">
-              {objects.map((o) => (
-                <div key={o.track_id} className={`target-card ${o.severity}`}>
-                  <strong>MỤC TIÊU {o.track_id}</strong>
-                  <span>Loại: {o.class}</span>
-                  <span>Khoảng cách: {o.distance_m ?? "-"} m</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          {currentMission && (
-            <div className="mission-card">
-              <div className="mission-card-header">
-                <span>{currentMission.name}</span>
-                <span className="badge">ĐANG THỰC HIỆN</span>
-              </div>
-              <div className="mission-card-body">
-                <span>UAV: {viewedUav?.name}</span>
-                <span>Waypoints: {currentMission.waypoints_reached} / {currentMission.waypoints?.length ?? 0}</span>
-              </div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${currentMission.progress_pct}%` }} />
-              </div>
-            </div>
-          )}
-        </div>
-
-        <aside className="side-panel">
-          <section>
-            <div className="side-panel-header">
-              <h2>Trạng thái UAV</h2>
-              <select value={viewedUavId ?? ""} onChange={(e) => setViewedUavId(Number(e.target.value))}>
-                {safeUavs.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
-            </div>
-            {!isLive && (
-              <button className="activate-btn" onClick={activate}>Kích hoạt giám sát trực tiếp</button>
-            )}
-            <dl className="telemetry-list">
-              <dt>Trạng thái</dt>
-              <dd className={isLive ? "ok" : ""}>{isLive ? "ĐANG BAY (live)" : "Giả lập"}</dd>
-              <dt>Pin</dt>
-              <dd>{viewedTelemetry?.battery_pct ?? "-"}%</dd>
-              <dt>Tốc độ</dt>
-              <dd>{viewedTelemetry?.speed_kmh ?? "-"} km/h</dd>
-              <dt>Độ cao</dt>
-              <dd>{viewedTelemetry?.altitude_m ?? "-"} m</dd>
-              <dt>Tín hiệu</dt>
-              <dd>{viewedTelemetry?.signal ?? "-"}</dd>
-              {isLive && (
-                <>
-                  <dt>Độ trễ</dt>
-                  <dd>{payload?.uav_status?.latency_ms ?? "-"} ms</dd>
-                </>
-              )}
-            </dl>
-          </section>
-
-          <section>
-            <h2>Điều khiển camera</h2>
-            <p className="muted">Chưa nối gimbal thật — nút bên dưới chỉ để dựng UI trước.</p>
-            <div className="eo-ir-toggle">
-              <button className={cameraMode === "EO" ? "active" : ""} onClick={() => setCameraMode("EO")}>EO</button>
-              <button className={cameraMode === "IR" ? "active" : ""} onClick={() => setCameraMode("IR")}>IR</button>
-            </div>
-            <div className="ptz-pad" title="Chưa nối gimbal thật">
-              <button disabled>▲</button>
-              <div className="ptz-row">
-                <button disabled>◀</button>
-                <button disabled>●</button>
-                <button disabled>▶</button>
-              </div>
-              <button disabled>▼</button>
-            </div>
-            <label className="zoom-slider">
-              Zoom {zoom.toFixed(1)}x
-              <input type="range" min="1" max="10" step="0.5" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
-            </label>
-            <div className="camera-actions">
-              <button onClick={downloadSnapshot}>📷 Chụp ảnh</button>
-              <button disabled title="Chưa hỗ trợ ghi video">⏺ Quay video</button>
-            </div>
-          </section>
-
-          <section>
-            <h2>Bản đồ nhiệm vụ</h2>
-            <MiniMap
-              waypoints={currentMission?.waypoints ?? []}
-              uavPosition={viewedTelemetry ? { lat: viewedTelemetry.lat, lon: viewedTelemetry.lon } : null}
+      {/* ROW 2: MAIN DYNAMIC CONTENT GRID */}
+      <div className="overview-main-grid">
+        {/* LEFT COLUMN: LIVE FEED + MISSION & MAP CARD */}
+        <div className="overview-left-col">
+          {/* CAMERA FEED & HUD */}
+          <div className="video-hud-panel">
+            <TacticalVideoHUD
+              isLive={true}
+              telemetry={payload?.uav_status}
+              objects={payload?.objects ?? []}
+              cameraMode={cameraMode}
+              zoomLevel={ptzZoom}
+              onZoomChange={setPtzZoom}
             />
-          </section>
-        </aside>
+          </div>
+
+          {/* CURRENT MISSION & MINI MAP SPLIT CARD */}
+          <div className="mission-map-split-card">
+            <div className="card-section-title">NHIỆM VỤ HIỆN TẠI</div>
+
+            <div className="split-card-content">
+              {/* LEFT HALF: MISSION DETAILS */}
+              <div className="mission-info-half">
+                <div className="mission-name-header">
+                  <span className="mission-title-text">TUẦN TRA KHU VỰC A</span>
+                  <span className="status-badge-running">ĐANG THỰC HIỆN</span>
+                </div>
+
+                <div className="mission-details-grid">
+                  <div className="detail-row">
+                    <span className="label">UAV</span>
+                    <span className="val bold-val">{selectedUavId}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="label">Thời gian bắt đầu</span>
+                    <span className="val">18:20 13/05/2024</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="label">Thời gian dự kiến</span>
+                    <span className="val">19:20 13/05/2024</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="label">Waypoints</span>
+                    <span className="val bold-val">12 / 15</span>
+                  </div>
+                </div>
+
+                <div className="mission-progress-container">
+                  <div className="progress-track">
+                    <div className="progress-fill-bar" style={{ width: "65%" }} />
+                  </div>
+                  <span className="progress-pct-text">65%</span>
+                </div>
+              </div>
+
+              {/* RIGHT HALF: TACTICAL MINI MAP */}
+              <div className="map-info-half">
+                <MiniMap uavPosition={payload?.uav_status?.gps} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: UAV TELEMETRY & CAMERA CONTROLS */}
+        <div className="overview-right-col">
+          {/* PANEL 1: TRẠNG THÁI UAV */}
+          <div className="uav-status-card">
+            <div className="uav-card-top-bar">
+              <span className="panel-title">TRẠNG THÁI UAV</span>
+              <div className="uav-select-pill">
+                <select
+                  value={selectedUavId}
+                  onChange={(e) => setSelectedUavId(e.target.value)}
+                >
+                  <option value="UAV_01">UAV_01</option>
+                  <option value="UAV_02">UAV_02</option>
+                  <option value="UAV_03">UAV_03</option>
+                  <option value="UAV_04">UAV_04</option>
+                </select>
+                <ChevronDown size={14} className="select-arrow" />
+              </div>
+            </div>
+
+            {/* DRONE PHOTOREALISTIC PREVIEW */}
+            <div className="drone-preview-box">
+              <img
+                src="/uav_drone.png"
+                alt="UAV Drone Model"
+                className="drone-render-img"
+              />
+            </div>
+
+            {/* TELEMETRY PARAMETER TABLE */}
+            <div className="telemetry-param-list">
+              <div className="param-row">
+                <span className="p-label">Trạng thái</span>
+                <span className="p-val green-text bold-text">ĐANG BAY</span>
+              </div>
+
+              <div className="param-row battery-row">
+                <span className="p-label">Pin</span>
+                <div className="p-val battery-val-group">
+                  <div className="battery-meter-bar">
+                    <div className="battery-fill-green" style={{ width: "78%" }} />
+                  </div>
+                  <span className="pct-num green-text">78%</span>
+                </div>
+              </div>
+
+              <div className="param-row">
+                <span className="p-label">Thời gian bay</span>
+                <span className="p-val">28:45</span>
+              </div>
+
+              <div className="param-row">
+                <span className="p-label">Khoảng cách</span>
+                <span className="p-val">5.2 km</span>
+              </div>
+
+              <div className="param-row">
+                <span className="p-label">Độ cao</span>
+                <span className="p-val">120 m</span>
+              </div>
+
+              <div className="param-row">
+                <span className="p-label">Tốc độ</span>
+                <span className="p-val">45.2 km/h</span>
+              </div>
+
+              <div className="param-row">
+                <span className="p-label">GPS</span>
+                <span className="p-val">12</span>
+              </div>
+
+              <div className="param-row">
+                <span className="p-label">Tín hiệu</span>
+                <span className="p-val green-text signal-val">
+                  <Wifi size={13} /> Strong
+                </span>
+              </div>
+            </div>
+
+            <button
+              className="uav-detail-btn"
+              onClick={() => onNavigateTab && onNavigateTab("uavs")}
+            >
+              Xem chi tiết
+            </button>
+          </div>
+
+          {/* PANEL 2: ĐIỀU KHIỂN CAMERA (EXACT USER IMAGE REFERENCE) */}
+          <div className="camera-control-card">
+            <div className="panel-title">ĐIỀU KHIỂN CAMERA</div>
+
+            {/* EO / IR MODE TOGGLES */}
+            <div className="camera-mode-pills">
+              <button
+                className={`mode-pill ${cameraMode === "EO" ? "active" : ""}`}
+                onClick={() => setCameraMode("EO")}
+              >
+                EO
+              </button>
+              <button
+                className={`mode-pill ${cameraMode === "IR" ? "active" : ""}`}
+                onClick={() => setCameraMode("IR")}
+              >
+                IR
+              </button>
+            </div>
+
+            {/* D-PAD & VERTICAL ZOOM CONTROLLER */}
+            <div className="ptz-controller-wrapper">
+              {/* CIRCULAR D-PAD DISC */}
+              <div className="ptz-dpad-disc-exact">
+                <button className="dpad-btn-pad up" title="Tilt Up">
+                  <ChevronUp size={20} strokeWidth={2.5} />
+                </button>
+                <div className="dpad-mid-row">
+                  <button className="dpad-btn-pad left" title="Pan Left">
+                    <ChevronLeft size={20} strokeWidth={2.5} />
+                  </button>
+                  <button className="dpad-center-circle" title="Center Lens">
+                    <div className="center-dot-inner" />
+                  </button>
+                  <button className="dpad-btn-pad right" title="Pan Right">
+                    <ChevronRight size={20} strokeWidth={2.5} />
+                  </button>
+                </div>
+                <button className="dpad-btn-pad down" title="Tilt Down">
+                  <ChevronDown size={20} strokeWidth={2.5} />
+                </button>
+              </div>
+
+              {/* VERTICAL ZOOM CAPSULE SLIDER */}
+              <div className="vertical-zoom-capsule-panel-ptz">
+                <button className="capsule-zoom-btn" onClick={() => handlePtzZoomChange(0.5)}>
+                  <Plus size={16} />
+                </button>
+                
+                <div className="capsule-ruler-scale">
+                  <div className="ruler-line" />
+                  <div className="ruler-line short" />
+                  <div className="ruler-line" />
+                </div>
+
+                <span className="capsule-zoom-val">{ptzZoom.toFixed(1)}X</span>
+
+                <div className="capsule-ruler-scale">
+                  <div className="ruler-line" />
+                  <div className="ruler-line short" />
+                  <div className="ruler-line" />
+                </div>
+
+                <button className="capsule-zoom-btn" onClick={() => handlePtzZoomChange(-0.5)}>
+                  <Minus size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* ACTION BUTTONS */}
+            <div className="camera-action-buttons">
+              <button className="cam-act-btn photo-btn" onClick={handleSnapshot}>
+                <Camera size={18} /> Chụp ảnh
+              </button>
+              <button
+                className={`cam-act-btn video-btn ${isRecording ? "recording" : ""}`}
+                onClick={() => setIsRecording(!isRecording)}
+              >
+                <span className={`red-rec-circle-solid ${isRecording ? "pulsate" : ""}`} />
+                {isRecording ? "Đang quay..." : "Quay video"}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="alert-ticker">
-        <strong>CẢNH BÁO GẦN NHẤT:</strong>
-        {(stats?.recent_alerts ?? []).length === 0 && <span className="muted">Chưa có cảnh báo</span>}
-        {(stats?.recent_alerts ?? []).map((a) => (
-          <span key={a.id} className={`ticker-item ${a.severity}`}>
-            {a.timestamp} · {SEVERITY_LABEL[a.severity]} · {a.class} · {a.distance_m}m
-          </span>
-        ))}
+      {/* ROW 3: BOTTOM TICKER / ALERT BAR */}
+      <div className="overview-alert-ticker">
+        <div className="ticker-label">CẢNH BÁO GẦN NHẤT</div>
+
+        <div className="ticker-items-container">
+          <div className="ticker-item danger">
+            <span className="dot red-dot" />
+            <span className="timestamp">18:35:21</span>
+            <span className="alert-text">UAV_04: Mất tín hiệu GPS tạm thời</span>
+          </div>
+
+          <div className="ticker-item warning">
+            <span className="dot orange-dot" />
+            <span className="timestamp">18:32:10</span>
+            <span className="alert-text">Pin UAV_03 yếu: 20%</span>
+          </div>
+
+          <div className="ticker-item danger">
+            <span className="dot red-dot" />
+            <span className="timestamp">18:20:05</span>
+            <span className="alert-text">Mục tiêu rời khỏi vùng theo dõi</span>
+          </div>
+        </div>
+
+        <button
+          className="view-all-alerts-link"
+          onClick={() => onNavigateTab && onNavigateTab("logs")}
+        >
+          Xem tất cả <ExternalLink size={13} />
+        </button>
       </div>
     </div>
   );

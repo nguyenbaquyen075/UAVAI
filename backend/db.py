@@ -37,7 +37,8 @@ def init_db():
             type TEXT NOT NULL DEFAULT '',
             serial TEXT NOT NULL DEFAULT '',
             zone TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            flying_since TEXT
         )
     """)
     conn.execute("""
@@ -90,6 +91,30 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS pois (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT '',
+            lat REAL NOT NULL,
+            lon REAL NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT '[]',
+            uav_id INTEGER,
+            mission_id INTEGER,
+            starred INTEGER NOT NULL DEFAULT 0,
+            author TEXT NOT NULL DEFAULT 'admin',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -102,7 +127,7 @@ def list_uavs():
     return [dict(r) for r in rows]
 
 
-UAV_EDITABLE_FIELDS = ("name", "video_source", "status", "type", "serial", "zone")
+UAV_EDITABLE_FIELDS = ("name", "video_source", "status", "type", "serial", "zone", "flying_since")
 
 
 def create_uav(name, video_source, status="ready", type_="", serial="", zone=""):
@@ -369,3 +394,99 @@ def list_target_snapshots(track_id, uav_id, limit=8):
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# --- POI (điểm quan tâm trên bản đồ) ---
+
+def list_pois():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM pois ORDER BY id DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def create_poi(name, type_, lat, lon):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.execute(
+        "INSERT INTO pois (name, type, lat, lon, created_at) VALUES (?, ?, ?, ?, ?)",
+        (name, type_, lat, lon, _now()),
+    )
+    conn.commit()
+    poi_id = cur.lastrowid
+    conn.close()
+    return poi_id
+
+
+def delete_poi(poi_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM pois WHERE id = ?", (poi_id,))
+    conn.commit()
+    conn.close()
+
+
+# --- Notes (ghi chép) ---
+
+def list_notes():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM notes ORDER BY id DESC").fetchall()
+    conn.close()
+    notes = [dict(r) for r in rows]
+    for n in notes:
+        n["tags"] = json.loads(n["tags"])
+        n["starred"] = bool(n["starred"])
+    return notes
+
+
+def get_note(note_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+    conn.close()
+    if row is None:
+        return None
+    note = dict(row)
+    note["tags"] = json.loads(note["tags"])
+    note["starred"] = bool(note["starred"])
+    return note
+
+
+def create_note(title, content="", tags=None, uav_id=None, mission_id=None, author="admin"):
+    now = _now()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.execute(
+        "INSERT INTO notes (title, content, tags, uav_id, mission_id, starred, author, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)",
+        (title, content, json.dumps(tags or []), uav_id, mission_id, author, now, now),
+    )
+    conn.commit()
+    note_id = cur.lastrowid
+    conn.close()
+    return note_id
+
+
+NOTE_EDITABLE_FIELDS = ("title", "content", "tags", "uav_id", "mission_id", "starred")
+
+
+def update_note(note_id, patch):
+    fields = {k: v for k, v in patch.items() if k in NOTE_EDITABLE_FIELDS}
+    if not fields:
+        return
+    if "tags" in fields:
+        fields["tags"] = json.dumps(fields["tags"])
+    if "starred" in fields:
+        fields["starred"] = 1 if fields["starred"] else 0
+    fields["updated_at"] = _now()
+    conn = sqlite3.connect(DB_PATH)
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    conn.execute(f"UPDATE notes SET {set_clause} WHERE id = ?", (*fields.values(), note_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_note(note_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+    conn.commit()
+    conn.close()

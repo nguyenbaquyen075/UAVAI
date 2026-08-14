@@ -1,5 +1,24 @@
 import { useEffect, useState } from "react";
 import {
+  User,
+  Car,
+  Bike,
+  Bus,
+  Truck,
+  HelpCircle,
+  Sparkles,
+  RefreshCw,
+  Target,
+  Search,
+  CheckCircle2,
+  AlertTriangle,
+  FolderOpen,
+  Check,
+  Crosshair,
+  Wifi,
+  Battery,
+} from "lucide-react";
+import {
   API_BASE,
   addTargetNote,
   getRecentTargetEvents,
@@ -15,12 +34,12 @@ import TargetsMap from "../components/TargetsMap";
 import DonutChart from "../components/DonutChart";
 
 const CLASS_LABEL = { person: "Con người", car: "Phương tiện", motorcycle: "Phương tiện", bus: "Phương tiện", truck: "Phương tiện" };
-const CLASS_ICON = { person: "🧍", car: "🚗", motorcycle: "🏍️", bus: "🚌", truck: "🚚" };
+const CLASS_ICON = { person: User, car: Car, motorcycle: Bike, bus: Bus, truck: Truck };
 const THREAT_LABEL = { high: "Cao", medium: "Trung bình", low: "Thấp" };
 const THREAT_CLASS = { high: "red", medium: "yellow", low: "blue" };
 const STATUS_LABEL = { new: "Mới phát hiện", tracking: "Đang theo dõi", confirmed: "Đã xác định", processed: "Đã xử lý" };
 const STATUS_CLASS = { new: "blue", tracking: "green", confirmed: "yellow", processed: "grey" };
-const EVENT_ICON = { detected: "🆕", status_changed: "🔄" };
+const EVENT_ICON = { detected: Sparkles, status_changed: RefreshCw };
 
 function fmtTime(iso) {
   if (!iso) return "-";
@@ -138,45 +157,45 @@ export default function Targets({ payload }) {
       <div className="live-sub-header" style={{ marginBottom: "10px" }}>
         <div className="header-left">
           <div className="uav-selector-wrapper">
-            <span className="sub-title-label">🎯 QUẢN LÝ MỤC TIÊU</span>
+            <span className="sub-title-label"><Target size={16} /> QUẢN LÝ MỤC TIÊU</span>
             <span className="dot-divider">/</span>
             <span className="breadcrumb-sub">Trang chủ &gt; Mục tiêu</span>
           </div>
         </div>
         <div className="header-right-telemetry">
-          <div className="telemetry-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>GPS <strong>12</strong></span></div>
-          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><span>Liên kết <strong>Strong</strong></span></div>
-          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg><span>Pin <strong>78%</strong></span></div>
+          <div className="telemetry-pill"><Crosshair size={14} color="#4ade80" /><span>GPS <strong>12</strong></span></div>
+          <div className="telemetry-pill green"><Wifi size={14} /><span>Liên kết <strong>Strong</strong></span></div>
+          <div className="telemetry-pill green"><Battery size={14} /><span>Pin <strong>78%</strong></span></div>
           <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
           <div className="user-profile-badge">
-            <div className="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div className="avatar"><User size={16} color="#e6e8ec" /></div>
             <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
           </div>
         </div>
       </div>
       <div className="stat-row">
         <div className="stat-card">
-          <div className="stat-icon">🎯</div>
+          <div className="stat-icon"><Target size={20} /></div>
           <div className="stat-label">TỔNG MỤC TIÊU</div>
           <div className="stat-value">{total}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">🔎</div>
+          <div className="stat-icon"><Search size={20} /></div>
           <div className="stat-label">ĐANG THEO DÕI</div>
           <div className="stat-value">{tracking}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">✅</div>
+          <div className="stat-icon"><CheckCircle2 size={20} color="#4ade80" /></div>
           <div className="stat-label">ĐÃ XÁC ĐỊNH</div>
           <div className="stat-value">{confirmed}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">⚠️</div>
+          <div className="stat-icon"><AlertTriangle size={20} color="#f87171" /></div>
           <div className="stat-label">MỨC ĐỘ NGUY HIỂM CAO</div>
           <div className="stat-value warn">{highThreat}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">🗂️</div>
+          <div className="stat-icon"><FolderOpen size={20} /></div>
           <div className="stat-label">ĐÃ XỬ LÝ</div>
           <div className="stat-value">{processed}</div>
         </div>
@@ -197,9 +216,11 @@ export default function Targets({ payload }) {
             </select>
           </div>
           <div className="targets-list">
-            {filtered.map((t) => (
+            {filtered.map((t) => {
+              const ClassIcon = CLASS_ICON[t.class] ?? HelpCircle;
+              return (
               <div key={t.id} className={`target-row ${t.id === selectedId ? "selected" : ""}`} onClick={() => setSelectedId(t.id)}>
-                <span className="target-row-icon">{CLASS_ICON[t.class] ?? "❓"}</span>
+                <span className="target-row-icon"><ClassIcon size={16} /></span>
                 <div className="target-row-body">
                   <strong>TGT_{t.id} · {CLASS_LABEL[t.class] ?? t.class}</strong>
                   <span className="muted">{t.distance_m != null ? `${t.distance_m} m` : "-"} · {fmtTime(t.last_seen)}</span>
@@ -209,7 +230,8 @@ export default function Targets({ payload }) {
                   <span className={`badge ${STATUS_CLASS[t.status]}`}>{STATUS_LABEL[t.status]}</span>
                 </div>
               </div>
-            ))}
+              );
+            })}
             {filtered.length === 0 && <p className="muted">Không có mục tiêu nào</p>}
           </div>
         </section>
@@ -229,7 +251,12 @@ export default function Targets({ payload }) {
             {!selected && <p className="muted">Chọn 1 mục tiêu trong danh sách</p>}
             {selected && (
               <>
-                <div className="target-hero">{CLASS_ICON[selected.class] ?? "❓"}</div>
+                <div className="target-hero">
+                  {(() => {
+                    const HeroIcon = CLASS_ICON[selected.class] ?? HelpCircle;
+                    return <HeroIcon size={40} />;
+                  })()}
+                </div>
                 <h3 style={{ textAlign: "center" }}>TGT_{selected.id}</h3>
                 <dl className="telemetry-list">
                   <dt>Loại</dt><dd>{CLASS_LABEL[selected.class] ?? selected.class}</dd>
@@ -241,9 +268,9 @@ export default function Targets({ payload }) {
                   <dt>UAV theo dõi</dt><dd>{safeUavs.find((u) => u.id === selected.uav_id)?.name}</dd>
                 </dl>
                 <div className="detail-actions">
-                  {selected.status !== "confirmed" && <button onClick={() => setStatus("confirmed")}>✔ Đã xác định</button>}
-                  {selected.status !== "processed" && <button onClick={() => setStatus("processed")}>🗂 Đã xử lý</button>}
-                  {selected.status !== "tracking" && <button onClick={() => setStatus("tracking")}>🔎 Theo dõi tiếp</button>}
+                  {selected.status !== "confirmed" && <button onClick={() => setStatus("confirmed")}><Check size={14} /> Đã xác định</button>}
+                  {selected.status !== "processed" && <button onClick={() => setStatus("processed")}><FolderOpen size={14} /> Đã xử lý</button>}
+                  {selected.status !== "tracking" && <button onClick={() => setStatus("tracking")}><Search size={14} /> Theo dõi tiếp</button>}
                 </div>
               </>
             )}
@@ -304,13 +331,16 @@ export default function Targets({ payload }) {
         <section className="panel wide">
           <h2>Hoạt động gần đây</h2>
           <div className="activity-list">
-            {safeRecentEvents.map((e) => (
-              <div key={e.id} className="activity-item" onClick={() => setSelectedId(e.target_id)}>
-                <span className="timeline-icon">{EVENT_ICON[e.type] ?? "•"}</span>
-                <span className="timeline-time">{fmtTime(e.timestamp)}</span>
-                <span>TGT_{e.target_id} ({CLASS_LABEL[e.class] ?? e.class}) — {e.label}</span>
-              </div>
-            ))}
+            {safeRecentEvents.map((e) => {
+              const EvIcon = EVENT_ICON[e.type];
+              return (
+                <div key={e.id} className="activity-item" onClick={() => setSelectedId(e.target_id)}>
+                  <span className="timeline-icon">{EvIcon ? <EvIcon size={14} /> : "•"}</span>
+                  <span className="timeline-time">{fmtTime(e.timestamp)}</span>
+                  <span>TGT_{e.target_id} ({CLASS_LABEL[e.class] ?? e.class}) — {e.label}</span>
+                </div>
+              );
+            })}
             {safeRecentEvents.length === 0 && <p className="muted">Chưa có hoạt động nào</p>}
           </div>
         </section>
@@ -320,13 +350,16 @@ export default function Targets({ payload }) {
         <section className="panel wide">
           <h2>Lịch sử mục tiêu TGT_{selected.id}</h2>
           <div className="timeline">
-            {safeEvents.slice().reverse().map((e) => (
-              <div key={e.id} className="timeline-item">
-                <span className="timeline-icon">{EVENT_ICON[e.type] ?? "•"}</span>
-                <span className="timeline-time">{fmtTime(e.timestamp)}</span>
-                <span className="timeline-label">{e.label}</span>
-              </div>
-            ))}
+            {safeEvents.slice().reverse().map((e) => {
+              const EvIcon = EVENT_ICON[e.type];
+              return (
+                <div key={e.id} className="timeline-item">
+                  <span className="timeline-icon">{EvIcon ? <EvIcon size={14} /> : "•"}</span>
+                  <span className="timeline-time">{fmtTime(e.timestamp)}</span>
+                  <span className="timeline-label">{e.label}</span>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}

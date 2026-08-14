@@ -2,7 +2,26 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  API_BASE,
+  Flag,
+  PlaneTakeoff,
+  MapPin,
+  AlertTriangle,
+  ClipboardList,
+  PlayCircle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Crosshair,
+  Wifi,
+  Battery,
+  User,
+  Camera,
+  Pause,
+  Play,
+  X,
+  Trash2,
+} from "lucide-react";
+import {
   activateUAV,
   createMission,
   deleteMission,
@@ -13,6 +32,7 @@ import {
   patchMission,
 } from "../api";
 import ProgressRing from "../components/ProgressRing";
+import TacticalVideoHUD from "../components/TacticalVideoHUD";
 
 const START = [21.0285, 105.8542];
 const PAGE_SIZE = 6;
@@ -20,7 +40,7 @@ const PAGE_SIZE = 6;
 const STATUS_LABEL = { active: "ĐANG THỰC HIỆN", paused: "TẠM DỪNG", completed: "HOÀN THÀNH", cancelled: "ĐÃ HUỶ", failed: "THẤT BẠI" };
 const STATUS_CLASS = { active: "green", paused: "yellow", completed: "blue", cancelled: "grey", failed: "red" };
 const PRIORITY_LABEL = { high: "Cao", medium: "Trung bình", low: "Thấp" };
-const EVENT_ICON = { created: "🏳️", start: "🛫", waypoint: "📍", alert: "⚠️" };
+const EVENT_ICON = { created: Flag, start: PlaneTakeoff, waypoint: MapPin, alert: AlertTriangle };
 
 function toLocalInput(date) {
   const pad = (n) => String(n).padStart(2, "0");
@@ -116,7 +136,13 @@ export default function Missions({ payload }) {
     const map = L.map(containerRef.current).setView(START, 15);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
-    markerRef.current = L.marker(START, { icon: L.divIcon({ className: "drone-marker", html: "🛸", iconSize: [20, 20] }) }).addTo(map);
+    markerRef.current = L.marker(START, {
+      icon: L.divIcon({
+        className: "drone-marker",
+        html: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"></path></svg>',
+        iconSize: [20, 20],
+      }),
+    }).addTo(map);
     mapRef.current = map;
     map.on("click", (e) => {
       setNewWaypoints((prev) => [...prev, { lat: e.latlng.lat, lon: e.latlng.lng }]);
@@ -200,45 +226,45 @@ export default function Missions({ payload }) {
       <div className="live-sub-header" style={{ marginBottom: "10px" }}>
         <div className="header-left">
           <div className="uav-selector-wrapper">
-            <span className="sub-title-label">🚩 QUẢN LÝ NHIỆM VỤ</span>
+            <span className="sub-title-label"><Flag size={16} /> QUẢN LÝ NHIỆM VỤ</span>
             <span className="dot-divider">/</span>
             <span className="breadcrumb-sub">Trang chủ &gt; Nhiệm vụ</span>
           </div>
         </div>
         <div className="header-right-telemetry">
-          <div className="telemetry-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>GPS <strong>12</strong></span></div>
-          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><span>Liên kết <strong>Strong</strong></span></div>
-          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg><span>Pin <strong>78%</strong></span></div>
+          <div className="telemetry-pill"><Crosshair size={14} color="#4ade80" /><span>GPS <strong>12</strong></span></div>
+          <div className="telemetry-pill green"><Wifi size={14} /><span>Liên kết <strong>Strong</strong></span></div>
+          <div className="telemetry-pill green"><Battery size={14} /><span>Pin <strong>78%</strong></span></div>
           <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
           <div className="user-profile-badge">
-            <div className="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div className="avatar"><User size={16} color="#e6e8ec" /></div>
             <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
           </div>
         </div>
       </div>
       <div className="stat-row">
         <div className="stat-card">
-          <div className="stat-icon">📋</div>
+          <div className="stat-icon"><ClipboardList size={20} /></div>
           <div className="stat-label">TỔNG NHIỆM VỤ</div>
           <div className="stat-value">{total}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">▶️</div>
+          <div className="stat-icon"><PlayCircle size={20} color="#4ade80" /></div>
           <div className="stat-label">ĐANG THỰC HIỆN</div>
           <div className="stat-value">{active}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">✅</div>
+          <div className="stat-icon"><CheckCircle2 size={20} color="#4ade80" /></div>
           <div className="stat-label">HOÀN THÀNH</div>
           <div className="stat-value">{completed}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">❌</div>
+          <div className="stat-icon"><XCircle size={20} color="#f87171" /></div>
           <div className="stat-label">THẤT BẠI / HUỶ</div>
           <div className="stat-value warn">{failedOrCancelled}</div>
         </div>
         <div className="stat-card" title="Tổng theo kế hoạch của nhiệm vụ đã hoàn thành, không phải thời gian bay đo thật">
-          <div className="stat-icon">🕐</div>
+          <div className="stat-icon"><Clock size={20} /></div>
           <div className="stat-label">TỔNG THỜI GIAN (KẾ HOẠCH)</div>
           <div className="stat-value">{totalFlightHours.toFixed(1)}h</div>
         </div>
@@ -333,10 +359,14 @@ export default function Missions({ payload }) {
 
             <section className="panel">
               <h2>Trực tiếp nhiệm vụ {isLive && <span className="live-dot">● LIVE</span>}</h2>
-              <div className="video-frame small">
-                <img className="video" src={`${API_BASE}/video`} alt="UAV live feed" />
-                <div className="crosshair" />
-                {!isLive && <div className="video-note">UAV nhiệm vụ này chưa được kích hoạt giám sát trực tiếp</div>}
+              <div className="main-video-hud-container">
+                <TacticalVideoHUD
+                  isLive={isLive}
+                  telemetry={telemetry}
+                  latencyMs={payload?.uav_status?.latency_ms}
+                  frameSize={payload?.uav_status}
+                  objects={isLive ? payload?.objects ?? [] : []}
+                />
               </div>
             </section>
           </div>
@@ -361,13 +391,13 @@ export default function Missions({ payload }) {
                 </dl>
                 {selected.description && <p className="muted">{selected.description}</p>}
                 <div className="detail-actions">
-                  {!isLive && <button onClick={() => activateUAV(selected.uav_id).then(refresh)}>📷 Xem trực tiếp</button>}
-                  {selected.status === "active" && <button onClick={() => setStatus("paused")}>⏸ Tạm dừng</button>}
-                  {selected.status === "paused" && <button onClick={() => setStatus("active")}>▶ Tiếp tục</button>}
+                  {!isLive && <button onClick={() => activateUAV(selected.uav_id).then(refresh)}><Camera size={14} /> Xem trực tiếp</button>}
+                  {selected.status === "active" && <button onClick={() => setStatus("paused")}><Pause size={14} /> Tạm dừng</button>}
+                  {selected.status === "paused" && <button onClick={() => setStatus("active")}><Play size={14} /> Tiếp tục</button>}
                   {(selected.status === "active" || selected.status === "paused") && (
-                    <button className="danger" onClick={() => setStatus("cancelled")}>✕ Huỷ nhiệm vụ</button>
+                    <button className="danger" onClick={() => setStatus("cancelled")}><X size={14} /> Huỷ nhiệm vụ</button>
                   )}
-                  <button onClick={() => remove(selected.id)}>🗑 Xoá</button>
+                  <button onClick={() => remove(selected.id)}><Trash2 size={14} /> Xoá</button>
                 </div>
               </>
             )}
@@ -406,13 +436,16 @@ export default function Missions({ payload }) {
         {!selected && <p className="muted">Chọn 1 nhiệm vụ để xem dòng thời gian</p>}
         {selected && (
           <div className="timeline">
-            {safeTimeline.map((e, i) => (
-              <div key={i} className={`timeline-item ${e.type}`}>
-                <span className="timeline-icon">{EVENT_ICON[e.type]}</span>
-                <span className="timeline-time">{fmtTime(e.time)}</span>
-                <span className="timeline-label">{e.label}</span>
-              </div>
-            ))}
+            {safeTimeline.map((e, i) => {
+              const EventIcon = EVENT_ICON[e.type] ?? Flag;
+              return (
+                <div key={i} className={`timeline-item ${e.type}`}>
+                  <span className="timeline-icon"><EventIcon size={14} /></span>
+                  <span className="timeline-time">{fmtTime(e.time)}</span>
+                  <span className="timeline-label">{e.label}</span>
+                </div>
+              );
+            })}
             {safeTimeline.length === 0 && <p className="muted">Chưa có sự kiện nào</p>}
           </div>
         )}

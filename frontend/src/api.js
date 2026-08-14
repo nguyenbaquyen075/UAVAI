@@ -111,6 +111,11 @@ export async function getLogs(params = {}) {
   return MOCK_LOGS;
 }
 
+export function logsExportUrl(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return `${API_BASE}/api/logs/export.csv${qs ? `?${qs}` : ""}`;
+}
+
 export async function getTrackHistory(trackId) {
   try {
     const r = await fetch(`${API_BASE}/api/tracks/${trackId}/history`);
@@ -368,4 +373,89 @@ export async function getTargetSnapshots(targetId) {
     }
   } catch {}
   return [];
+}
+
+// --- POI (Bản đồ) ---
+export async function listPois() {
+  try {
+    const r = await fetch(`${API_BASE}/api/pois`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [];
+}
+
+export async function createPoi(poi) {
+  try {
+    const r = await fetch(`${API_BASE}/api/pois`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(poi),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { id: Date.now(), ...poi };
+}
+
+export async function deletePoi(poiId) {
+  try {
+    const r = await fetch(`${API_BASE}/api/pois/${poiId}`, { method: "DELETE" });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { success: true };
+}
+
+// --- Notes (Ghi chép) ---
+export async function listNotes() {
+  try {
+    const r = await fetch(`${API_BASE}/api/notes`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [];
+}
+
+export async function createNote(note) {
+  try {
+    const r = await fetch(`${API_BASE}/api/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(note),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { id: Date.now(), ...note };
+}
+
+export async function patchNote(noteId, patch) {
+  try {
+    const r = await fetch(`${API_BASE}/api/notes/${noteId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { id: noteId, ...patch };
+}
+
+export async function deleteNote(noteId) {
+  try {
+    const r = await fetch(`${API_BASE}/api/notes/${noteId}`, { method: "DELETE" });
+    if (r.ok) return await r.json();
+  } catch {}
+  return { success: true };
+}
+
+// --- Analytics ---
+export async function getAnalyticsStats(days = 7) {
+  try {
+    const r = await fetch(`${API_BASE}/api/stats/analytics?days=${days}`);
+    if (r.ok) return await r.json();
+  } catch {}
+  return null;
 }

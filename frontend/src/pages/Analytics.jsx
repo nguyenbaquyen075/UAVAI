@@ -1,10 +1,37 @@
 import { useEffect, useState } from "react";
+import {
+  BarChart3,
+  Crosshair,
+  Wifi,
+  Battery,
+  User,
+  Clock,
+  Target,
+  CheckCircle2,
+  AlertTriangle,
+  Siren,
+  ArrowUpDown,
+} from "lucide-react";
+import { getAnalyticsStats, getLogs } from "../api";
 import FlightHoursChart from "../components/FlightHoursChart";
 import UavRadarChart from "../components/UavRadarChart";
 import BatteryConsumptionChart from "../components/BatteryConsumptionChart";
+import DonutChart from "../components/DonutChart";
 
-export default function Analytics() {
+function fmtHours(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
+const PRIORITY_LABEL = { high: "Cao", medium: "Trung bình", low: "Thấp" };
+const SEVERITY_LABEL_VI = { red: "Nguy hiểm", yellow: "Cảnh báo" };
+
+export default function Analytics({ payload }) {
   const [currentTime, setCurrentTime] = useState("");
+  const [days, setDays] = useState(7);
+  const [stats, setStats] = useState(null);
+  const [recentAlerts, setRecentAlerts] = useState([]);
 
   useEffect(() => {
     const updateClock = () => {
@@ -18,443 +45,212 @@ export default function Analytics() {
     return () => clearInterval(interval);
   }, []);
 
-  const uavPerformanceList = [
-    { id: "UAV_01", hours: "32h 15m", dist: "312 km", missions: 12, rate: 95.8, bat: "68%", incidents: 1 },
-    { id: "UAV_02", hours: "27h 10m", dist: "276 km", missions: 10, rate: 90.0, bat: "71%", incidents: 1 },
-    { id: "UAV_03", hours: "22h 45m", dist: "198 km", missions: 9, rate: 88.9, bat: "65%", incidents: 2 },
-    { id: "UAV_04", hours: "18h 20m", dist: "156 km", missions: 7, rate: 100, bat: "62%", incidents: 0 },
-    { id: "UAV_05", hours: "16h 35m", dist: "142 km", missions: 6, rate: 83.3, bat: "70%", incidents: 2 },
-    { id: "UAV_06", hours: "11h 40m", dist: "98 km", missions: 4, rate: 75.0, bat: "66%", incidents: 1 },
+  useEffect(() => {
+    async function load() {
+      const [analytics, logs] = await Promise.all([getAnalyticsStats(days), getLogs()]);
+      setStats(analytics);
+      setRecentAlerts(Array.isArray(logs) ? logs.slice(0, 5) : []);
+    }
+    load();
+    const id = setInterval(load, 5000);
+    return () => clearInterval(id);
+  }, [days]);
+
+  const perUav = stats?.per_uav ?? [];
+  const alertRed = stats?.alerts_by_severity?.red ?? 0;
+  const alertYellow = stats?.alerts_by_severity?.yellow ?? 0;
+
+  const flightAllocSegments = perUav
+    .filter((u) => u.flight_seconds_planned > 0)
+    .map((u, i) => ({ label: u.name, value: Math.round(u.flight_seconds_planned / 60), color: ["#22c55e", "#3b82f6", "#a855f7", "#f97316", "#06b6d4", "#ef4444"][i % 6] }));
+
+  const missionsByClass = {};
+  perUav.forEach((u) => { missionsByClass[u.name] = u.missions_total; });
+
+  const severitySegments = [
+    { label: "Nguy hiểm", value: alertRed, color: "#ef4444" },
+    { label: "Cảnh báo", value: alertYellow, color: "#facc15" },
   ];
+
+  const targetClassEntries = Object.entries(stats?.targets_by_class ?? {});
+  const targetClassColors = { person: "#f87171", car: "#60a5fa", motorcycle: "#facc15", bus: "#a855f7", truck: "#4ade80" };
+  const targetClassSegments = targetClassEntries.map(([cls, n]) => ({ label: cls, value: n, color: targetClassColors[cls] ?? "#9aa2b1" }));
 
   return (
     <div className="analytics-page-layout">
-      {/* Sub Header */}
       <div className="live-sub-header">
         <div className="header-left">
           <div className="uav-selector-wrapper">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2">
-              <line x1="18" y1="20" x2="18" y2="10"></line>
-              <line x1="12" y1="20" x2="12" y2="4"></line>
-              <line x1="6" y1="20" x2="6" y2="14"></line>
-            </svg>
+            <BarChart3 size={18} color="#4ade80" />
             <span className="sub-title-label">PHÂN TÍCH</span>
             <span className="dot-divider">/</span>
             <span className="breadcrumb-sub">Trang chủ &gt; Phân tích</span>
           </div>
         </div>
-
         <div className="header-right-telemetry">
-          <div className="telemetry-pill">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="2" x2="12" y2="22"></line>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-            </svg>
-            <span>GPS <strong>12</strong></span>
-          </div>
-
-          <div className="telemetry-pill green">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
-              <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
-              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-              <line x1="12" y1="20" x2="12.01" y2="20"></line>
-            </svg>
-            <span>Liên kết <strong>Strong</strong></span>
-          </div>
-
-          <div className="telemetry-pill green">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="1" y="6" width="18" height="12" rx="2" ry="2"></rect>
-              <line x1="23" y1="11" x2="23" y2="13"></line>
-            </svg>
-            <span>Pin <strong>78%</strong></span>
-          </div>
-
-          <div className="telemetry-pill clock-pill">
-            <span>{currentTime || "18:42:10 13/05/2024"}</span>
-          </div>
-
+          <div className="telemetry-pill"><Crosshair size={14} color="#4ade80" /><span>GPS <strong>12</strong></span></div>
+          <div className="telemetry-pill green"><Wifi size={14} /><span>Liên kết <strong>Strong</strong></span></div>
+          <div className="telemetry-pill green"><Battery size={14} /><span>Pin <strong>78%</strong></span></div>
+          <div className="telemetry-pill clock-pill"><span>{currentTime || "-"}</span></div>
           <div className="user-profile-badge">
-            <div className="avatar">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
-            </div>
-            <div className="user-info">
-              <span className="username">admin</span>
-              <span className="user-role">Quản trị viên</span>
-            </div>
+            <div className="avatar"><User size={16} color="#e6e8ec" /></div>
+            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
           </div>
         </div>
       </div>
 
-      {/* Row 1: Top 6 KPI Cards */}
+      <div className="notes-top-bar" style={{ marginBottom: "10px" }}>
+        <span className="muted" style={{ fontSize: "12px" }}>Khoảng thời gian tính cảnh báo/mục tiêu:</span>
+        <select className="filter-select" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+          <option value={7}>7 ngày</option>
+          <option value={30}>30 ngày</option>
+          <option value={90}>90 ngày</option>
+        </select>
+      </div>
+
+      {/* Row 1: 6 KPI Cards — số thật/tính toán từ backend, không có so sánh tuần trước (không lưu lịch sử) */}
       <div className="analytics-kpi-grid">
         <div className="kpi-card">
-          <div className="kpi-icon blue">🕒</div>
+          <div className="kpi-icon blue"><Clock size={20} /></div>
           <div className="kpi-body">
-            <span className="kpi-label">TỔNG SỐ GIỜ BAY</span>
-            <div className="kpi-val">128h 45m</div>
-            <span className="kpi-trend up">↑ 18% so với tuần trước</span>
+            <span className="kpi-label">GIỜ BAY (KẾ HOẠCH)</span>
+            <div className="kpi-val">{stats ? fmtHours(stats.flight_seconds_planned_total) : "-"}</div>
+            <span className="kpi-trend">Tổng nhiệm vụ đã hoàn thành</span>
           </div>
         </div>
-
         <div className="kpi-card">
-          <div className="kpi-icon purple">🗺️</div>
+          <div className="kpi-icon purple"><Target size={20} /></div>
           <div className="kpi-body">
-            <span className="kpi-label">TỔNG QUẢNG ĐƯỜNG</span>
-            <div className="kpi-val">1,245 km</div>
-            <span className="kpi-trend up">↑ 12% so với tuần trước</span>
+            <span className="kpi-label">MỤC TIÊU PHÁT HIỆN</span>
+            <div className="kpi-val">{stats?.targets_total ?? "-"}</div>
+            <span className="kpi-trend">Tổng số mục tiêu đã ghi nhận</span>
           </div>
         </div>
-
         <div className="kpi-card">
-          <div className="kpi-icon green">✅</div>
+          <div className="kpi-icon green"><CheckCircle2 size={20} color="#4ade80" /></div>
           <div className="kpi-body">
             <span className="kpi-label">NHIỆM VỤ HOÀN THÀNH</span>
-            <div className="kpi-val">48</div>
-            <span className="kpi-trend up">↑ 20% so với tuần trước</span>
+            <div className="kpi-val">{stats?.missions_completed ?? "-"} <span className="unit">/ {stats?.missions_total ?? "-"}</span></div>
+            <span className="kpi-trend">{stats?.missions_active ?? 0} đang chạy</span>
           </div>
         </div>
-
         <div className="kpi-card">
-          <div className="kpi-icon cyan">📊</div>
+          <div className="kpi-icon cyan"><BarChart3 size={20} /></div>
           <div className="kpi-body">
             <span className="kpi-label">TỶ LỆ THÀNH CÔNG</span>
-            <div className="kpi-val">92.3%</div>
-            <span className="kpi-trend up">↑ 6% so với tuần trước</span>
+            <div className="kpi-val">{stats?.success_rate ?? "-"}%</div>
           </div>
         </div>
-
         <div className="kpi-card">
-          <div className="kpi-icon red">⚠️</div>
+          <div className="kpi-icon red"><AlertTriangle size={20} color="#f87171" /></div>
           <div className="kpi-body">
-            <span className="kpi-label">SỰ CỐ / CẢNH BÁO</span>
-            <div className="kpi-val">7</div>
-            <span className="kpi-trend up">↓ -22% so với tuần trước</span>
+            <span className="kpi-label">CẢNH BÁO ({days}N)</span>
+            <div className="kpi-val">{stats?.alerts_total ?? "-"}</div>
           </div>
         </div>
-
         <div className="kpi-card">
-          <div className="kpi-icon money">💲</div>
+          <div className="kpi-icon red"><Siren size={20} color="#f87171" /></div>
           <div className="kpi-body">
-            <span className="kpi-label">CHI PHÍ VẬN HÀNH</span>
-            <div className="kpi-val">32.5M <span className="unit">VNĐ</span></div>
-            <span className="kpi-trend up">↓ -8% so với tuần trước</span>
+            <span className="kpi-label">CẢNH BÁO MỨC NGUY HIỂM</span>
+            <div className="kpi-val">{alertRed}</div>
           </div>
         </div>
       </div>
 
-      {/* Row 2: 3 Main Charts */}
+      {/* Row 2 */}
       <div className="analytics-row-3col">
-        <FlightHoursChart />
+        <FlightHoursChart perUav={perUav} />
 
-        {/* Flight Hours Allocation Donut Card */}
         <div className="allocation-card">
-          <div className="card-header-row">
-            <span className="card-title">PHẦN BỔ GIỜ BAY THEO UAV</span>
-          </div>
-          <div className="allocation-body">
-            <div className="donut-graphic-box">
-              <svg width="150" height="150" viewBox="0 0 150 150">
-                <circle cx="75" cy="75" r="50" fill="none" stroke="#161c28" strokeWidth="22" />
-                <circle cx="75" cy="75" r="50" fill="none" stroke="#22c55e" strokeWidth="22" strokeDasharray="314" strokeDashoffset="78" transform="rotate(-90 75 75)" />
-                <circle cx="75" cy="75" r="50" fill="none" stroke="#3b82f6" strokeWidth="22" strokeDasharray="314" strokeDashoffset="144" transform="rotate(0 75 75)" />
-                <circle cx="75" cy="75" r="50" fill="none" stroke="#a855f7" strokeWidth="22" strokeDasharray="314" strokeDashoffset="200" transform="rotate(76 75 75)" />
-                <circle cx="75" cy="75" r="50" fill="none" stroke="#f97316" strokeWidth="22" strokeDasharray="314" strokeDashoffset="245" transform="rotate(140 75 75)" />
-                <circle cx="75" cy="75" r="50" fill="none" stroke="#06b6d4" strokeWidth="22" strokeDasharray="314" strokeDashoffset="275" transform="rotate(190 75 75)" />
-                <circle cx="75" cy="75" r="50" fill="none" stroke="#ef4444" strokeWidth="22" strokeDasharray="314" strokeDashoffset="295" transform="rotate(236 75 75)" />
-              </svg>
-              <div className="donut-center-text">
-                <span className="lbl">Tổng</span>
-                <strong className="val">128h 45m</strong>
-              </div>
-            </div>
-
-            <div className="allocation-legend-list">
-              <div className="alloc-item">
-                <span className="sq-dot" style={{ background: "#22c55e" }}></span>
-                <span className="u-name">UAV_01</span>
-                <strong className="u-val">32h 15m (25.1%)</strong>
-              </div>
-              <div className="alloc-item">
-                <span className="sq-dot" style={{ background: "#3b82f6" }}></span>
-                <span className="u-name">UAV_02</span>
-                <strong className="u-val">27h 10m (21.1%)</strong>
-              </div>
-              <div className="alloc-item">
-                <span className="sq-dot" style={{ background: "#a855f7" }}></span>
-                <span className="u-name">UAV_03</span>
-                <strong className="u-val">22h 45m (17.7%)</strong>
-              </div>
-              <div className="alloc-item">
-                <span className="sq-dot" style={{ background: "#f97316" }}></span>
-                <span className="u-name">UAV_04</span>
-                <strong className="u-val">18h 20m (14.3%)</strong>
-              </div>
-              <div className="alloc-item">
-                <span className="sq-dot" style={{ background: "#06b6d4" }}></span>
-                <span className="u-name">UAV_05</span>
-                <strong className="u-val">16h 35m (12.9%)</strong>
-              </div>
-              <div className="alloc-item">
-                <span className="sq-dot" style={{ background: "#ef4444" }}></span>
-                <span className="u-name">UAV_06</span>
-                <strong className="u-val">11h 40m (9.0%)</strong>
-              </div>
-            </div>
-          </div>
-          <div className="link-action-footer">
-            <a href="#details">Xem chi tiết &gt;</a>
-          </div>
+          <div className="card-header-row"><span className="card-title">PHÂN BỔ GIỜ BAY THEO UAV (PHÚT)</span></div>
+          {flightAllocSegments.length === 0 ? (
+            <p className="muted">Chưa có nhiệm vụ hoàn thành nào.</p>
+          ) : (
+            <DonutChart segments={flightAllocSegments} />
+          )}
         </div>
 
-        <UavRadarChart />
+        <UavRadarChart perUav={perUav} />
       </div>
 
-      {/* Row 3: Detailed Breakdown Cards */}
+      {/* Row 3 */}
       <div className="analytics-row-3col">
-        {/* Mission Breakdown Card */}
         <div className="breakdown-card">
-          <div className="card-header-row">
-            <span className="card-title">PHÂN TÍCH NHIỆM VỤ</span>
-          </div>
-          <div className="breakdown-body-split">
-            <div className="donut-mini-wrap">
-              <svg width="110" height="110" viewBox="0 0 110 110">
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#161c28" strokeWidth="16" />
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#22c55e" strokeWidth="16" strokeDasharray="238" strokeDashoffset="20" transform="rotate(-90 55 55)" />
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#ef4444" strokeWidth="16" strokeDasharray="238" strokeDashoffset="228" transform="rotate(240 55 55)" />
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#3b82f6" strokeWidth="16" strokeDasharray="238" strokeDashoffset="228" transform="rotate(255 55 55)" />
-              </svg>
-              <div className="donut-center-text mini">
-                <strong className="val">48</strong>
-                <span className="lbl">Nhiệm vụ</span>
-              </div>
-            </div>
-
-            <div className="types-list">
-              <div className="section-subtitle">LOẠI NHIỆM VỤ</div>
-              <div className="type-row">
-                <span>🛡️ Giám sát</span>
-                <strong>22 (45.8%)</strong>
-              </div>
-              <div className="type-row">
-                <span>🚑 Tìm kiếm cứu nạn</span>
-                <strong>12 (25.0%)</strong>
-              </div>
-              <div className="type-row">
-                <span>📦 Vận chuyển</span>
-                <strong>8 (16.7%)</strong>
-              </div>
-              <div className="type-row">
-                <span>🗺️ Khảo sát</span>
-                <strong>6 (12.5%)</strong>
-              </div>
-            </div>
-          </div>
-          <div className="link-action-footer">
-            <a href="#missions">Xem chi tiết &gt;</a>
-          </div>
+          <div className="card-header-row"><span className="card-title">MỤC TIÊU THEO LOẠI</span></div>
+          {targetClassSegments.length === 0 ? (
+            <p className="muted">Chưa có mục tiêu nào được ghi nhận.</p>
+          ) : (
+            <DonutChart segments={targetClassSegments} size={120} />
+          )}
         </div>
 
-        {/* Battery Consumption Chart */}
-        <BatteryConsumptionChart />
+        <BatteryConsumptionChart perUav={perUav} />
 
-        {/* Incidents Breakdown Card */}
         <div className="incidents-card">
-          <div className="card-header-row">
-            <span className="card-title">THỐNG KÊ SỰ CỐ</span>
-          </div>
-          <div className="incidents-body">
-            <div className="donut-mini-wrap">
-              <svg width="110" height="110" viewBox="0 0 110 110">
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#161c28" strokeWidth="16" />
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#ef4444" strokeWidth="16" strokeDasharray="238" strokeDashoffset="136" transform="rotate(-90 55 55)" />
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#f97316" strokeWidth="16" strokeDasharray="238" strokeDashoffset="170" transform="rotate(64 55 55)" />
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#a855f7" strokeWidth="16" strokeDasharray="238" strokeDashoffset="204" transform="rotate(166 55 55)" />
-                <circle cx="55" cy="55" r="38" fill="none" stroke="#3b82f6" strokeWidth="16" strokeDasharray="238" strokeDashoffset="204" transform="rotate(218 55 55)" />
-              </svg>
-              <div className="donut-center-text mini">
-                <strong className="val">7</strong>
-                <span className="lbl">Sự cố</span>
-              </div>
-            </div>
-
-            <div className="incidents-list">
-              <div className="inc-row">
-                <span className="dot red">●</span>
-                <span className="label">Mất tín hiệu</span>
-                <strong className="val">3 (42.9%)</strong>
-              </div>
-              <div className="inc-row">
-                <span className="dot orange">●</span>
-                <span className="label">Pin yếu</span>
-                <strong className="val">2 (28.6%)</strong>
-              </div>
-              <div className="inc-row">
-                <span className="dot purple">●</span>
-                <span className="label">Va chạm</span>
-                <strong className="val">1 (14.3%)</strong>
-              </div>
-              <div className="inc-row">
-                <span className="dot blue">●</span>
-                <span className="label">Lỗi động cơ</span>
-                <strong className="val">1 (14.3%)</strong>
-              </div>
-            </div>
-          </div>
-          <div className="link-action-footer">
-            <a href="#incidents">Xem chi tiết &gt;</a>
-          </div>
+          <div className="card-header-row"><span className="card-title">CẢNH BÁO THEO MỨC ĐỘ ({days}N)</span></div>
+          {alertRed + alertYellow === 0 ? (
+            <p className="muted">Chưa có cảnh báo trong khoảng thời gian này.</p>
+          ) : (
+            <DonutChart segments={severitySegments} size={120} />
+          )}
         </div>
       </div>
 
-      {/* Row 4: Performance Table & Insights */}
+      {/* Row 4: Bảng hiệu suất + tóm tắt */}
       <div className="analytics-row-bottom">
-        {/* UAV Performance Table */}
         <div className="perf-table-card">
-          <div className="card-header-row">
-            <span className="card-title">HIỆU SUẤT UAV</span>
-          </div>
+          <div className="card-header-row"><span className="card-title">HIỆU SUẤT UAV</span></div>
           <table>
             <thead>
               <tr>
-                <th>UAV</th>
-                <th>Tổng giờ bay</th>
-                <th>Quãng đường</th>
-                <th>Nhiệm vụ</th>
-                <th>Tỷ lệ thành công</th>
-                <th>Tiêu thụ pin TB</th>
-                <th>Sự cố</th>
+                <th>UAV</th><th>Giờ bay (KH)</th><th>Nhiệm vụ</th><th>Tỷ lệ thành công</th><th>Pin hiện tại</th><th>Cảnh báo</th>
               </tr>
             </thead>
             <tbody>
-              {uavPerformanceList.map((row) => (
-                <tr key={row.id}>
-                  <td><strong>{row.id}</strong></td>
-                  <td>{row.hours}</td>
-                  <td>{row.dist}</td>
-                  <td>{row.missions}</td>
+              {perUav.map((row) => (
+                <tr key={row.uav_id}>
+                  <td><strong>{row.name}</strong></td>
+                  <td>{fmtHours(row.flight_seconds_planned)}</td>
+                  <td>{row.missions_completed} / {row.missions_total}</td>
                   <td>
                     <div className="rate-flex">
-                      <span>{row.rate}%</span>
-                      <div className="mini-prog-track">
-                        <div
-                          className={`mini-prog-fill ${row.rate >= 90 ? "green" : "orange"}`}
-                          style={{ width: `${row.rate}%` }}
-                        ></div>
+                      <span>{row.success_rate}%</span>
+                      <div className="progress-bar">
+                        <div className={`progress-fill ${row.success_rate >= 80 ? "green" : "yellow"}`} style={{ width: `${row.success_rate}%` }} />
                       </div>
                     </div>
                   </td>
-                  <td>{row.bat}</td>
-                  <td>
-                    <span className={`badge ${row.incidents > 0 ? "red" : "grey"}`}>{row.incidents}</span>
-                  </td>
+                  <td>{row.battery_pct_now}%</td>
+                  <td><span className={`badge ${row.alerts_count > 0 ? "red" : "grey"}`}>{row.alerts_count}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        {/* 7-Day Trend Sparklines Card */}
         <div className="trend-card">
-          <div className="card-header-row">
-            <span className="card-title">XU HƯỚNG 7 NGÀY QUA</span>
-            <select className="mini-select" defaultValue="7">
-              <option value="7">7 ngày</option>
-            </select>
-          </div>
+          <div className="card-header-row"><span className="card-title">TÓM TẮT {days} NGÀY QUA</span></div>
           <div className="trend-rows">
-            <div className="trend-row">
-              <div className="trend-meta">
-                <span className="lbl">Giờ bay</span>
-                <strong className="val">18h 25m</strong>
-              </div>
-              <div className="trend-spark">
-                <svg width="70" height="20" viewBox="0 0 70 20">
-                  <path d="M 0 14 L 14 10 L 28 16 L 42 8 L 56 12 L 70 4" fill="none" stroke="#22c55e" strokeWidth="2" />
-                </svg>
-              </div>
-              <span className="trend-change up">↑ 15.3%</span>
-            </div>
-
-            <div className="trend-row">
-              <div className="trend-meta">
-                <span className="lbl">Quãng đường</span>
-                <strong className="val">156 km</strong>
-              </div>
-              <div className="trend-spark">
-                <svg width="70" height="20" viewBox="0 0 70 20">
-                  <path d="M 0 16 L 14 12 L 28 14 L 42 6 L 56 10 L 70 2" fill="none" stroke="#22c55e" strokeWidth="2" />
-                </svg>
-              </div>
-              <span className="trend-change up">↑ 9.8%</span>
-            </div>
-
-            <div className="trend-row">
-              <div className="trend-meta">
-                <span className="lbl">Nhiệm vụ</span>
-                <strong className="val">8</strong>
-              </div>
-              <div className="trend-spark">
-                <svg width="70" height="20" viewBox="0 0 70 20">
-                  <path d="M 0 18 L 14 14 L 28 10 L 42 12 L 56 6 L 70 4" fill="none" stroke="#22c55e" strokeWidth="2" />
-                </svg>
-              </div>
-              <span className="trend-change up">↑ 14.3%</span>
-            </div>
-
-            <div className="trend-row">
-              <div className="trend-meta">
-                <span className="lbl">Tỷ lệ thành công</span>
-                <strong className="val">91.2%</strong>
-              </div>
-              <div className="trend-spark">
-                <svg width="70" height="20" viewBox="0 0 70 20">
-                  <path d="M 0 12 L 14 8 L 28 10 L 42 6 L 56 4 L 70 2" fill="none" stroke="#22c55e" strokeWidth="2" />
-                </svg>
-              </div>
-              <span className="trend-change up">↑ 6.7%</span>
-            </div>
+            <div className="trend-row"><div className="trend-meta"><span className="lbl">Cảnh báo</span><strong className="val">{stats?.alerts_total ?? "-"}</strong></div></div>
+            <div className="trend-row"><div className="trend-meta"><span className="lbl">Mục tiêu ghi nhận</span><strong className="val">{stats?.targets_total ?? "-"}</strong></div></div>
+            <div className="trend-row"><div className="trend-meta"><span className="lbl">Nhiệm vụ hoàn thành</span><strong className="val">{stats?.missions_completed ?? "-"}</strong></div></div>
+            <div className="trend-row"><div className="trend-meta"><span className="lbl">Tỷ lệ thành công</span><strong className="val">{stats?.success_rate ?? "-"}%</strong></div></div>
           </div>
         </div>
 
-        {/* AI Recommendations Card */}
         <div className="recommendations-card">
-          <div className="card-header-row">
-            <span className="card-title">BÁO CÁO ĐỀ XUẤT</span>
-          </div>
+          <div className="card-header-row"><span className="card-title">CẢNH BÁO GẦN ĐÂY</span></div>
+          {recentAlerts.length === 0 && <p className="muted">Chưa có cảnh báo.</p>}
           <div className="recs-list">
-            <div className="rec-item">
-              <div className="rec-icon green">🔋</div>
-              <div className="rec-text">
-                <p className="main-desc">UAV_02 tiêu thụ pin cao hơn mức trung bình 15%.</p>
-                <p className="sub-suggestion">Đề xuất: Kiểm tra pin và hiệu chỉnh lại.</p>
+            {recentAlerts.map((a) => (
+              <div key={a.id} className="rec-item">
+                <div className={`rec-icon ${a.severity === "red" ? "red" : "blue"}`}><ArrowUpDown size={16} /></div>
+                <div className="rec-text">
+                  <p className="main-desc">{a.class} · {a.distance_m}m · {SEVERITY_LABEL_VI[a.severity] ?? a.severity}</p>
+                  <p className="sub-suggestion">{new Date(a.timestamp).toLocaleString("vi-VN")}</p>
+                </div>
               </div>
-            </div>
-
-            <div className="rec-item">
-              <div className="rec-icon blue">📶</div>
-              <div className="rec-text">
-                <p className="main-desc">3 lần mất tín hiệu trong khu vực Đông Anh.</p>
-                <p className="sub-suggestion">Đề xuất: Kiểm tra lại trạm lặp tín hiệu.</p>
-              </div>
-            </div>
-
-            <div className="rec-item">
-              <div className="rec-icon red">🎯</div>
-              <div className="rec-text">
-                <p className="main-desc">Khu vực cầu Đông Trù có tần suất nhiệm vụ cao nhất.</p>
-                <p className="sub-suggestion">Đề xuất: Lên kế hoạch bảo trì định kỳ.</p>
-              </div>
-            </div>
-          </div>
-          <div className="link-action-footer">
-            <a href="#full-reports">Xem đầy đủ báo cáo &gt;</a>
+            ))}
           </div>
         </div>
       </div>

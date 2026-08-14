@@ -10,6 +10,14 @@ DEFAULTS = {
     "alert_threshold_m": 10.0,
     "warning_threshold_m": 15.0,
     "max_acceptable_delay": 0.3,
+    # Thông tin hệ thống — chỉ hiển thị/mô tả, không ảnh hưởng pipeline, nhưng lưu thật vào settings.json
+    "system_name": "UAV Control - Hệ thống quản lý UAV",
+    "system_description": "Hệ thống giám sát và quản lý UAV phục vụ cho các nhiệm vụ giám sát, tuần tra, khảo sát.",
+    "timezone": "UTC+07:00 Bangkok, Hanoi, Jakarta",
+    "date_format": "DD/MM/YYYY",
+    "time_format": "24h",
+    "distance_unit": "m",
+    "speed_unit": "km/h",
 }
 
 

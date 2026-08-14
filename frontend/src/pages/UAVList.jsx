@@ -1,6 +1,22 @@
 import { useEffect, useState } from "react";
 import {
-  API_BASE,
+  Plane,
+  Satellite,
+  Clock,
+  Wrench,
+  AlertTriangle,
+  X,
+  Pencil,
+  Gamepad2,
+  ArrowDown,
+  Play,
+  Trash2,
+  Eye,
+  MapPin,
+  Settings,
+  MoreVertical,
+} from "lucide-react";
+import {
   activateUAV,
   createUAV,
   deleteUAV,
@@ -11,10 +27,34 @@ import {
   updateUAV,
 } from "../api";
 import FleetMap from "../components/FleetMap";
+import TacticalVideoHUD from "../components/TacticalVideoHUD";
 
 const STATUS_LABEL = { flying: "ĐANG BAY", ready: "SẴN SÀNG", offline: "OFFLINE", maintenance: "BẢO TRÌ" };
 const STATUS_CLASS = { flying: "green", ready: "blue", offline: "grey", maintenance: "yellow" };
 const SEVERITY_LABEL = { red: "NGUY HIỂM", yellow: "CẢNH BÁO" };
+const PAGE_SIZE = 6;
+const BASE_LAT = 21.0285; // ponytail: trùng CENTER_LAT/LON giả lập ở backend/telemetry.py — dùng để tính khoảng cách
+const BASE_LON = 105.8542;
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function flightDuration(flyingSince) {
+  if (!flyingSince) return "-";
+  const ms = Date.now() - new Date(flyingSince).getTime();
+  if (ms < 0) return "-";
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  const s = Math.floor((ms % 60_000) / 1000);
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
 
 function SignalBars({ signal }) {
   const level = signal === "Strong" ? 4 : signal === "Weak" ? 2 : 0;
@@ -27,7 +67,18 @@ function SignalBars({ signal }) {
   );
 }
 
-export default function UAVList({ activeUavId, payload }) {
+function PinBar({ pct }) {
+  if (pct == null) return <span className="muted">-</span>;
+  const level = pct > 50 ? "green" : pct > 20 ? "yellow" : "red";
+  return (
+    <div className="pin-cell">
+      <span>{pct}%</span>
+      <div className="progress-bar small"><div className={`progress-fill ${level}`} style={{ width: `${pct}%` }} /></div>
+    </div>
+  );
+}
+
+export default function UAVList({ activeUavId, payload, onOpenAlerts }) {
   const [uavs, setUavs] = useState([]);
   const [missions, setMissions] = useState([]);
   const [stats, setStats] = useState(null);
@@ -37,6 +88,7 @@ export default function UAVList({ activeUavId, payload }) {
   const [editForm, setEditForm] = useState(null);
   const [form, setForm] = useState({ name: "", video_source: "", type: "", zone: "" });
   const [showAdd, setShowAdd] = useState(false);
+  const [page, setPage] = useState(1);
 
   async function refresh() {
     const list = await listUAVs();
@@ -114,56 +166,48 @@ export default function UAVList({ activeUavId, payload }) {
   const maintenance = safeUavs.filter((u) => u.status === "maintenance").length;
   const offline = safeUavs.filter((u) => u.status === "offline").length;
   const alertCount = stats?.alert_count_24h ?? 0;
+  const pct = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);
 
   const runningMissions = safeMissions.filter((m) => m.status === "active");
 
+  const pageCount = Math.max(1, Math.ceil(safeUavs.length / PAGE_SIZE));
+  const pageItems = safeUavs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const uavGps = isLive ? payload?.uav_status?.gps : telemetry;
+  const distanceKm = uavGps ? haversineKm(BASE_LAT, BASE_LON, uavGps.lat, uavGps.lon).toFixed(1) : null;
+
   return (
     <div className="fleet-page">
-      <div className="live-sub-header" style={{ marginBottom: "10px" }}>
-        <div className="header-left">
-          <div className="uav-selector-wrapper">
-            <span className="sub-title-label">🛸 DANH SÁCH UAV</span>
-            <span className="dot-divider">/</span>
-            <span className="breadcrumb-sub">Trang chủ &gt; UAV</span>
-          </div>
-        </div>
-        <div className="header-right-telemetry">
-          <div className="telemetry-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>GPS <strong>12</strong></span></div>
-          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg><span>Liên kết <strong>Strong</strong></span></div>
-          <div className="telemetry-pill green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg><span>Pin <strong>78%</strong></span></div>
-          <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
-          <div className="user-profile-badge">
-            <div className="avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6e8ec" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
-          </div>
-        </div>
-      </div>
       <div className="stat-row">
         <div className="stat-card">
-          <div className="stat-icon">🛸</div>
+          <div className="stat-icon"><Plane size={20} /></div>
           <div className="stat-label">TỔNG UAV</div>
           <div className="stat-value">{total}</div>
           <div className="stat-sub">{total - offline} online · {offline} offline</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">🛰️</div>
+          <div className="stat-icon"><Satellite size={20} /></div>
           <div className="stat-label">ĐANG BAY</div>
           <div className="stat-value">{flying}</div>
+          <div className="stat-sub">{pct(flying)}%</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">⏱️</div>
+          <div className="stat-icon"><Clock size={20} /></div>
           <div className="stat-label">SẴN SÀNG</div>
           <div className="stat-value">{ready}</div>
+          <div className="stat-sub">{pct(ready)}%</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">🔧</div>
+          <div className="stat-icon"><Wrench size={20} /></div>
           <div className="stat-label">BẢO TRÌ</div>
           <div className="stat-value">{maintenance}</div>
+          <div className="stat-sub">{pct(maintenance)}%</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">⚠️</div>
+          <div className="stat-icon"><AlertTriangle size={20} color="#f87171" /></div>
           <div className="stat-label">CẢNH BÁO</div>
           <div className="stat-value warn">{alertCount}</div>
+          {onOpenAlerts && <button className="stat-link" onClick={onOpenAlerts}>Xem chi tiết ›</button>}
         </div>
       </div>
 
@@ -190,7 +234,8 @@ export default function UAVList({ activeUavId, payload }) {
                 <th>ID</th>
                 <th>Tên UAV</th>
                 <th>Trạng thái</th>
-                <th>Khu vực</th>
+                <th>Pin</th>
+                <th>Vị trí</th>
                 <th>Độ cao</th>
                 <th>Tốc độ</th>
                 <th>Liên kết</th>
@@ -198,7 +243,7 @@ export default function UAVList({ activeUavId, payload }) {
               </tr>
             </thead>
             <tbody>
-              {safeUavs.map((u) => (
+              {pageItems.map((u) => (
                 <UavRow
                   key={u.id}
                   uav={u}
@@ -207,44 +252,69 @@ export default function UAVList({ activeUavId, payload }) {
                   onSelect={() => setSelectedId(u.id)}
                   onActivate={() => activate(u.id)}
                   onDelete={() => removeUav(u.id)}
+                  onFocusMap={() => setSelectedId(u.id)}
+                  onEdit={() => { setSelectedId(u.id); startEdit(); }}
                 />
               ))}
-              {safeUavs.length === 0 && (
-                <tr><td colSpan={8} className="muted">Chưa có UAV nào</td></tr>
+              {pageItems.length === 0 && (
+                <tr><td colSpan={9} className="muted">Chưa có UAV nào</td></tr>
               )}
             </tbody>
           </table>
+
+          <div className="table-footer-pagination">
+            <span>Hiển thị {pageItems.length ? (page - 1) * PAGE_SIZE + 1 : 0} đến {(page - 1) * PAGE_SIZE + pageItems.length} của {total} UAV</span>
+            <div className="pagination">
+              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>‹</button>
+              <span>{page}</span>
+              <button disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>›</button>
+            </div>
+          </div>
         </section>
 
         <section className="panel detail-panel">
           <div className="panel-header">
             <h2>Chi tiết UAV</h2>
-            {selected && <span className={`badge ${STATUS_CLASS[selected.status]}`}>{STATUS_LABEL[selected.status]}</span>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {selected && <span className={`badge ${STATUS_CLASS[selected.status]}`}>{STATUS_LABEL[selected.status]}</span>}
+              {selected && <button className="icon-close" onClick={() => setSelectedId(null)} title="Đóng"><X size={14} /></button>}
+            </div>
           </div>
 
           {!selected && <p className="muted">Chọn 1 UAV trong danh sách</p>}
 
           {selected && !editing && (
             <>
-              <div className="uav-hero">🛸</div>
-              <h3>{selected.name}</h3>
-              <p className="muted">{selected.type || "Chưa đặt loại"} · {selected.serial || "-"}</p>
+              <div className="uav-profile-box">
+                <div className="uav-image-preview">
+                  <Plane size={32} color="#60a5fa" strokeWidth={1.5} />
+                </div>
+                <div className="uav-meta">
+                  <h3>{selected.name}</h3>
+                  <p>{selected.type || "Chưa đặt loại"}</p>
+                  <span className={`badge ${STATUS_CLASS[selected.status]}`}>● {STATUS_LABEL[selected.status]}</span>
+                </div>
+              </div>
 
               <dl className="telemetry-list">
+                <dt>Loại UAV</dt><dd>{selected.type || "-"}</dd>
+                <dt>Serial</dt><dd>{selected.serial || "-"}</dd>
                 <dt>Trạng thái</dt><dd className={isLive ? "ok" : ""}>{isLive ? "Live" : "Giả lập"}</dd>
-                <dt>Pin</dt><dd>{telemetry?.battery_pct ?? "-"}%</dd>
+                <dt>Thời gian bay</dt><dd>{flightDuration(selected.flying_since)}</dd>
                 <dt>Độ cao</dt><dd>{telemetry?.altitude_m ?? "-"} m</dd>
+                <dt>Khoảng cách</dt><dd>{distanceKm ?? "-"} km</dd>
+                <dt>Pin</dt><dd>{telemetry?.battery_pct ?? "-"}%</dd>
                 <dt>Tốc độ</dt><dd>{telemetry?.speed_kmh ?? "-"} km/h</dd>
                 <dt>Liên kết</dt><dd><SignalBars signal={telemetry?.signal} /></dd>
                 {isLive && <><dt>Độ trễ</dt><dd>{payload?.uav_status?.latency_ms ?? "-"} ms</dd></>}
               </dl>
 
               <div className="detail-actions">
-                {!isLive && <button onClick={() => activate(selected.id)}>▶ Theo dõi trực tiếp</button>}
-                <button onClick={startEdit}>✎ Sửa</button>
-                <button disabled title="Chưa nối điều khiển bay thật (MAVLink)">🕹 Điều khiển</button>
+                {!isLive && <button onClick={() => activate(selected.id)}><Play size={14} /> Theo dõi trực tiếp</button>}
+                <button onClick={startEdit}><Pencil size={14} /> Sửa</button>
+                <button disabled title="Chưa nối điều khiển bay thật (MAVLink)"><Gamepad2 size={14} /> Điều khiển</button>
                 <button disabled title="Chưa nối điều khiển bay thật (MAVLink)">↩ Quay về</button>
-                <button disabled title="Chưa nối điều khiển bay thật (MAVLink)">⬇ Hạ cánh</button>
+                <button disabled title="Chưa nối điều khiển bay thật (MAVLink)"><ArrowDown size={14} /> Hạ cánh</button>
               </div>
             </>
           )}
@@ -284,10 +354,14 @@ export default function UAVList({ activeUavId, payload }) {
       <div className="fleet-row">
         <section className="panel wide">
           <h2>Theo dõi trực tiếp {selected ? `- ${selected.name}` : ""} {isLive && <span className="live-dot">● LIVE</span>}</h2>
-          <div className="video-frame small">
-            <img className="video" src={`${API_BASE}/video`} alt="UAV live feed" />
-            <div className="crosshair" />
-            {!isLive && <div className="video-note">Chưa kích hoạt giám sát trực tiếp cho UAV này</div>}
+          <div className="main-video-hud-container">
+            <TacticalVideoHUD
+              isLive={isLive}
+              telemetry={telemetry}
+              latencyMs={payload?.uav_status?.latency_ms}
+              frameSize={payload?.uav_status}
+              objects={payload?.objects ?? []}
+            />
           </div>
         </section>
 
@@ -346,8 +420,9 @@ export default function UAVList({ activeUavId, payload }) {
   );
 }
 
-function UavRow({ uav, isActive, selected, onSelect, onActivate, onDelete }) {
+function UavRow({ uav, isActive, selected, onSelect, onActivate, onDelete, onFocusMap, onEdit }) {
   const [telemetry, setTelemetry] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -364,14 +439,25 @@ function UavRow({ uav, isActive, selected, onSelect, onActivate, onDelete }) {
       <td>{uav.id}</td>
       <td>{uav.name}</td>
       <td><span className={`badge ${STATUS_CLASS[uav.status]}`}>{STATUS_LABEL[uav.status]}</span></td>
+      <td><PinBar pct={telemetry?.battery_pct} /></td>
       <td>{uav.zone || "-"}</td>
       <td>{telemetry?.altitude_m ?? "-"} m</td>
       <td>{telemetry?.speed_kmh ?? "-"} km/h</td>
       <td><SignalBars signal={telemetry?.signal} /></td>
       <td className="row-actions">
-        <button onClick={onSelect} title="Xem chi tiết">👁</button>
-        {!isActive && <button onClick={onActivate} title="Theo dõi trực tiếp">▶</button>}
-        {!isActive && <button onClick={onDelete} title="Xoá">🗑</button>}
+        <button onClick={onSelect} title="Xem chi tiết"><Eye size={14} /></button>
+        <button onClick={onFocusMap} title="Xem trên bản đồ"><MapPin size={14} /></button>
+        <button onClick={onEdit} title="Sửa"><Settings size={14} /></button>
+        <span className="row-menu">
+          <button onClick={() => setMenuOpen((v) => !v)} title="Thêm"><MoreVertical size={14} /></button>
+          {menuOpen && (
+            <div className="row-menu-dropdown" onMouseLeave={() => setMenuOpen(false)}>
+              {!isActive && <button onClick={() => { onActivate(); setMenuOpen(false); }}><Play size={14} /> Theo dõi trực tiếp</button>}
+              {!isActive && <button onClick={() => { onDelete(); setMenuOpen(false); }}><Trash2 size={14} /> Xoá</button>}
+              {isActive && <span className="muted">Đang giám sát trực tiếp</span>}
+            </div>
+          )}
+        </span>
       </td>
     </tr>
   );

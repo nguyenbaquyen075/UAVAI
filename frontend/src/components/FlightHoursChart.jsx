@@ -1,147 +1,108 @@
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 
-export default function FlightHoursChart() {
-  const [timeRange, setTimeRange] = useState("30 ngày");
+const COLORS = ["#22c55e", "#3b82f6", "#a855f7", "#f97316", "#06b6d4", "#ef4444"];
+const DAYS = 30;
 
-  const dates = ["14/04", "17/04", "20/04", "23/04", "26/04", "29/04", "02/05", "05/05", "08/05", "11/05", "13/05"];
+// ponytail: không có bảng lưu giờ bay lịch sử theo ngày (chỉ có nhiệm vụ hoàn thành + telemetry
+// tức thời) — giữ đúng dạng biểu đồ gốc (nhiều đường, 1 đường/UAV, theo ngày). Chuỗi ngày là minh
+// hoạ, seed theo tên UAV nên ổn định qua các lần render, biên độ neo quanh trung bình giờ bay/ngày
+// suy ra từ flight_seconds_planned thật của UAV đó (không bịa hoàn toàn ngẫu nhiên).
+function seed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) / 4294967295;
+}
 
-  const uavSeries = [
-    { id: "UAV_01", color: "#22c55e", points: [12, 14, 19, 13, 16, 17, 21, 18.6, 17, 19, 18] },
-    { id: "UAV_02", color: "#3b82f6", points: [9, 11, 14, 12, 14, 12, 16, 14.3, 13, 14, 15] },
-    { id: "UAV_03", color: "#a855f7", points: [7, 8, 11, 10, 11, 9, 13, 11.8, 11, 12, 13] },
-    { id: "UAV_04", color: "#f97316", points: [5, 6, 8, 7, 9, 8, 10, 9.2, 9, 10, 9] },
-    { id: "UAV_05", color: "#06b6d4", points: [3, 4, 6, 5, 7, 6, 8, 6.7, 7, 8, 7] },
-    { id: "UAV_06", color: "#ef4444", points: [1, 2, 3, 3, 4, 3, 5, 3.1, 4, 4, 3] },
-  ];
+function dayLabel(d) {
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
-  const svgWidth = 560;
-  const svgHeight = 200;
-  const maxY = 25;
+function illustrativeSeries(name, avgHours) {
+  const s = seed(name);
+  const base = Math.max(1, avgHours || 3 + s * 10);
+  const pts = [];
+  for (let i = 0; i < DAYS; i++) {
+    const wave = Math.sin((i + s * 25) / 3.2) * base * 0.5;
+    const noise = (Math.sin((i + s * 60) * 3.1) * 0.5) * base * 0.15;
+    pts.push(Math.max(0, Math.round((base + wave + noise) * 10) / 10));
+  }
+  return pts;
+}
 
-  const getPath = (points) => {
-    const step = svgWidth / (points.length - 1);
-    return points
-      .map((val, idx) => {
-        const x = idx * step;
-        const y = svgHeight - (val / maxY) * (svgHeight - 20) - 10;
-        return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-      })
-      .join(" ");
-  };
+export default function FlightHoursChart({ perUav = [] }) {
+  const canvasRef = useRef(null);
 
-  // Tooltip x position for index 7 (05/05)
-  const tooltipX = 7 * (svgWidth / (dates.length - 1));
+  const dayLabels = [];
+  for (let i = DAYS - 1; i >= 0; i--) dayLabels.push(dayLabel(new Date(Date.now() - i * 86_400_000)));
+
+  const series = perUav.map((u, i) => ({
+    id: u.uav_id,
+    name: u.name,
+    color: COLORS[i % COLORS.length],
+    points: illustrativeSeries(u.name, u.flight_seconds_planned / 3600 / 4),
+  }));
+  const maxVal = Math.max(...series.flatMap((s) => s.points), 4);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || series.length === 0) return;
+    const ctx = canvas.getContext("2d");
+    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    const cw = canvas.offsetWidth;
+    const ch = canvas.offsetHeight;
+    ctx.clearRect(0, 0, cw, ch);
+
+    const padL = 26, padR = 8, padT = 8, padB = 20;
+    const plotW = cw - padL - padR;
+    const plotH = ch - padT - padB;
+    const n = DAYS;
+    const gap = plotW / (n - 1);
+
+    ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = padT + plotH - (plotH * i) / 4;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
+      ctx.fillStyle = "#64748b"; ctx.font = "8px sans-serif"; ctx.textAlign = "right";
+      ctx.fillText(`${Math.round((maxVal * i) / 4)}h`, padL - 4, y + 3);
+    }
+
+    series.forEach((s) => {
+      ctx.beginPath();
+      s.points.forEach((v, i) => {
+        const x = padL + i * gap;
+        const y = padT + plotH - (v / maxVal) * plotH;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.stroke();
+    });
+
+    ctx.fillStyle = "#64748b"; ctx.font = "8px sans-serif"; ctx.textAlign = "center";
+    dayLabels.forEach((label, i) => { if (i % 5 === 0) ctx.fillText(label, padL + i * gap, padT + plotH + 14); });
+  }, [perUav]);
 
   return (
     <div className="flight-hours-card">
       <div className="card-header-row">
         <div className="card-title">
-          <span>THỐNG KÊ GIỜ BAY</span>
-          <span className="info-icon" title="Tổng giờ bay của hệ thống theo mốc thời gian">ⓘ</span>
-        </div>
-        <div className="card-controls">
-          <div className="range-tabs">
-            {["7 ngày", "30 ngày", "90 ngày"].map((range) => (
-              <button
-                key={range}
-                className={`range-tab ${timeRange === range ? "active" : ""}`}
-                onClick={() => setTimeRange(range)}
-              >
-                {range}
-              </button>
-            ))}
-          </div>
-          <div className="datepicker-btn">
-            <span>14/04/2024 - 13/05/2024</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="16" y1="2" x2="16" y2="6"></line>
-              <line x1="8" y1="2" x2="8" y2="6"></line>
-              <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
-          </div>
+          <span>THỐNG KÊ GIỜ BAY (30 NGÀY)</span>
+          <span className="info-icon" title="Chuỗi theo ngày là minh hoạ (chưa lưu giờ bay lịch sử) — biên độ neo theo giờ bay kế hoạch thật mỗi UAV">ⓘ</span>
         </div>
       </div>
 
-      <div className="chart-wrapper">
-        <div className="y-axis">
-          <span>25h</span>
-          <span>20h</span>
-          <span>15h</span>
-          <span>10h</span>
-          <span>5h</span>
-          <span>0h</span>
-        </div>
-
-        <div className="svg-container">
-          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} preserveAspectRatio="none" className="multi-line-svg">
-            {/* Horizontal Grid lines */}
-            {[0, 0.2, 0.4, 0.6, 0.8, 1].map((ratio, i) => (
-              <line
-                key={i}
-                x1="0"
-                y1={svgHeight * ratio}
-                x2={svgWidth}
-                y2={svgHeight * ratio}
-                stroke="#1e293b"
-                strokeWidth="1"
-                strokeDasharray="4 4"
-              />
-            ))}
-
-            {/* Series Lines */}
-            {uavSeries.map((series) => (
-              <path
-                key={series.id}
-                d={getPath(series.points)}
-                fill="none"
-                stroke={series.color}
-                strokeWidth="2.5"
-              />
-            ))}
-
-            {/* Active Vertical Tooltip Line */}
-            <line x1={tooltipX} y1="0" x2={tooltipX} y2={svgHeight} stroke="#475569" strokeDasharray="3 3" strokeWidth="1.5" />
-
-            {/* Hover Circles */}
-            {uavSeries.map((series) => {
-              const val = series.points[7];
-              const cy = svgHeight - (val / maxY) * (svgHeight - 20) - 10;
-              return <circle key={series.id} cx={tooltipX} cy={cy} r="4" fill={series.color} stroke="#10141d" strokeWidth="2" />;
-            })}
-          </svg>
-
-          {/* Floating Tooltip Box */}
-          <div className="chart-tooltip-box" style={{ left: `${(tooltipX / svgWidth) * 82}%` }}>
-            <div className="tooltip-date">05/05/2024</div>
-            <div className="tooltip-items">
-              {uavSeries.map((s) => (
-                <div key={s.id} className="tooltip-item">
-                  <span className="dot" style={{ background: s.color }}></span>
-                  <span className="lbl">{s.id}:</span>
-                  <strong className="val">{s.points[7]} h</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="x-axis">
-            {dates.map((d) => (
-              <span key={d}>{d}</span>
+      {perUav.length === 0 ? (
+        <p className="muted">Chưa có nhiệm vụ hoàn thành nào để tính giờ bay.</p>
+      ) : (
+        <>
+          <canvas ref={canvasRef} className="report-canvas" style={{ height: "170px" }}></canvas>
+          <div className="chart-legend-row">
+            {series.map((s) => (
+              <span key={s.id}><span className="lgd-line" style={{ background: s.color }}></span>{s.name}</span>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* Series Legend at Bottom */}
-      <div className="chart-series-legend">
-        {uavSeries.map((s) => (
-          <div key={s.id} className="legend-chip">
-            <span className="chip-line" style={{ background: s.color }}></span>
-            <span>{s.id}</span>
-          </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 }
