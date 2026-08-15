@@ -1,80 +1,172 @@
-import { useEffect, useRef } from "react";
+export default function DistanceChart() {
+  const dates = [
+    "01/05",
+    "02/05",
+    "03/05",
+    "04/05",
+    "05/05",
+    "06/05",
+    "07/05",
+    "08/05",
+    "09/05",
+    "10/05",
+    "11/05",
+    "12/05",
+    "13/05",
+  ];
 
-// ponytail: không có log quãng đường bay thật (chỉ vị trí tức thời giả lập, không tích luỹ theo
-// thời gian) — giữ đúng dạng biểu đồ gốc (area/line, quãng đường theo ngày). Số liệu là minh hoạ,
-// seed theo NHÃN NGÀY THẬT (dayLabels truyền từ ReportsView) nên ổn định qua các lần render,
-// không phải Math.random() mỗi lần vẽ.
-function seed(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0) / 4294967295;
-}
+  const data = [
+    { day: "01/05", km: 20 },
+    { day: "02/05", km: 38 },
+    { day: "03/05", km: 55 },
+    { day: "04/05", km: 64 },
+    { day: "05/05", km: 95 },
+    { day: "06/05", km: 128 },
+    { day: "07/05", km: 65 },
+    { day: "08/05", km: 110 },
+    { day: "09/05", km: 132 },
+    { day: "10/05", km: 182 },
+    { day: "11/05", km: 135 },
+    { day: "12/05", km: 118 },
+    { day: "13/05", km: 155 },
+  ];
 
-function illustrativeKm(label, idx) {
-  const s = seed(label);
-  const wave = 0.5 + 0.5 * Math.sin(idx / 2.2 + s * 10);
-  return Math.round(30 + wave * 130 + s * 25);
-}
+  const svgWidth = 460;
+  const svgHeight = 210;
+  const paddingLeft = 32;
+  const paddingRight = 16;
+  const baseY = 178;
+  const topY = 28;
+  const plotH = baseY - topY; // 150px
+  const chartW = svgWidth - paddingLeft - paddingRight; // 412px
+  const stepX = chartW / (dates.length - 1); // 34.33px per step
 
-export default function DistanceChart({ dayLabels = [] }) {
-  const canvasRef = useRef(null);
-  const days = dayLabels.map((label, i) => ({ label, count: illustrativeKm(label, i) }));
+  const points = data.map((d, i) => {
+    const cx = paddingLeft + i * stepX;
+    const lineY = baseY - (d.km / 200) * plotH;
+    return { cx, lineY, ...d };
+  });
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || days.length === 0) return;
-    const ctx = canvas.getContext("2d");
-    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    const cw = canvas.offsetWidth;
-    const ch = canvas.offsetHeight;
-    ctx.clearRect(0, 0, cw, ch);
+  const curvePoints = points.map((p) => ({ x: p.cx, y: p.lineY }));
 
-    const padL = 30, padR = 12, padT = 12, padB = 28;
-    const plotW = cw - padL - padR;
-    const plotH = ch - padT - padB;
-    const n = days.length;
-    const gap = n > 1 ? plotW / (n - 1) : 0;
-    const maxVal = Math.max(...days.map((d) => d.count), 4);
+  const createSmoothPath = (pts) => {
+    if (pts.length < 2) return "";
+    let path = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = i > 0 ? pts[i - 1] : pts[i];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = i < pts.length - 2 ? pts[i + 2] : p2;
 
-    ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) {
-      const y = padT + plotH - (plotH * i) / 4;
-      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
-      ctx.fillStyle = "#64748b"; ctx.font = "9px sans-serif"; ctx.textAlign = "right";
-      ctx.fillText(Math.round((maxVal * i) / 4), padL - 4, y + 3);
+      const cp1x = p1.x + (p2.x - p0.x) / 5;
+      const cp1y = p1.y + (p2.y - p0.y) / 5;
+      const cp2x = p2.x - (p3.x - p1.x) / 5;
+      const cp2y = p2.y - (p3.y - p1.y) / 5;
+
+      path += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(
+        1
+      )} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
     }
+    return path;
+  };
 
-    const pts = days.map((d, i) => ({ x: padL + i * gap, y: padT + plotH - (d.count / maxVal) * plotH }));
-    if (pts.length > 1) {
-      ctx.beginPath();
-      pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-      ctx.lineTo(pts[pts.length - 1].x, padT + plotH);
-      ctx.lineTo(pts[0].x, padT + plotH);
-      ctx.closePath();
-      const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
-      grad.addColorStop(0, "rgba(34,197,94,0.4)");
-      grad.addColorStop(1, "rgba(34,197,94,0.02)");
-      ctx.fillStyle = grad; ctx.fill();
-
-      ctx.beginPath(); ctx.strokeStyle = "#22c55e"; ctx.lineWidth = 2.5;
-      pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-      ctx.stroke();
-    }
-    pts.forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2); ctx.fillStyle = "#22c55e"; ctx.fill(); });
-
-    ctx.fillStyle = "#64748b"; ctx.font = "9px sans-serif"; ctx.textAlign = "center";
-    days.forEach((d, i) => { if (n <= 15 || i % 2 === 0) ctx.fillText(d.label, padL + i * gap, padT + plotH + 16); });
-  }, [dayLabels]);
+  const smoothLineD = createSmoothPath(curvePoints);
+  const smoothAreaD = `${smoothLineD} L ${
+    curvePoints[curvePoints.length - 1].x
+  } ${baseY} L ${curvePoints[0].x} ${baseY} Z`;
 
   return (
-    <div className="report-chart-card">
-      <div className="card-header-row">
-        <span className="card-title">THỐNG KÊ QUÃNG ĐƯỜNG BAY (KM)</span>
-        <span className="info-icon" title="Chưa có log quãng đường thật (chỉ vị trí tức thời giả lập) — số liệu minh hoạ theo ngày">ⓘ</span>
+    <div className="dashboard-panel dist-sub-card">
+      <div className="panel-section-header">
+        <h3 className="section-title">THỐNG KÊ QUẢNG ĐƯỜNG BAY (km)</h3>
+        <select className="select-sm">
+          <option>13 ngày</option>
+        </select>
       </div>
-      {days.length === 0 ? <p className="muted">Chưa có dữ liệu trong khoảng thời gian này.</p> : <canvas ref={canvasRef} className="report-canvas" style={{ height: "130px" }}></canvas>}
+
+      <div className="dist-curve-box">
+        <svg
+          width="100%"
+          height="210"
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="dist-svg"
+        >
+          <defs>
+            <linearGradient id="greenDistGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#22c55e" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#22c55e" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid Lines & Left Y-Axis Ticks */}
+          {[
+            { y: 28, val: 200 },
+            { y: 65.5, val: 150 },
+            { y: 103, val: 100 },
+            { y: 140.5, val: 50 },
+            { y: 178, val: 0 },
+          ].map((g, i) => (
+            <g key={i}>
+              <line
+                x1={paddingLeft}
+                y1={g.y}
+                x2={svgWidth - paddingRight}
+                y2={g.y}
+                stroke="#1e293b"
+                strokeWidth="1"
+              />
+              <text
+                x={paddingLeft - 6}
+                y={g.y + 3}
+                fill="#64748b"
+                fontSize="9"
+                textAnchor="end"
+                fontFamily="JetBrains Mono, monospace"
+              >
+                {g.val}
+              </text>
+            </g>
+          ))}
+
+          {/* Smooth Green Gradient Under-fill */}
+          <path d={smoothAreaD} fill="url(#greenDistGrad)" />
+
+          {/* Smooth Green Line Path */}
+          <path d={smoothLineD} fill="none" stroke="#22c55e" strokeWidth="2" />
+
+          {/* Glowing Green Node Dots */}
+          {points.map((p, i) => (
+            <circle
+              key={i}
+              cx={p.cx}
+              cy={p.lineY}
+              r="3.5"
+              fill="#4ade80"
+              stroke="#0b0f19"
+              strokeWidth="1.5"
+            />
+          ))}
+
+          {/* X-Axis Date Labels (every 2nd date: 01/05, 03/05, 05/05, 07/05, 09/05, 11/05, 13/05) */}
+          {points.map(
+            (p, i) =>
+              i % 2 === 0 && (
+                <text
+                  key={p.day + i}
+                  x={p.cx}
+                  y="196"
+                  fill="#94a3b8"
+                  fontSize="9.5"
+                  fontWeight="500"
+                  textAnchor="middle"
+                  fontFamily="JetBrains Mono, monospace"
+                >
+                  {p.day}
+                </text>
+              )
+          )}
+        </svg>
+      </div>
     </div>
   );
 }
