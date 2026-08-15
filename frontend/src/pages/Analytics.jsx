@@ -28,47 +28,6 @@ export default function Analytics({ payload }) {
 
   return (
     <div className="analytics-page-v2">
-      {/* Sub Header */}
-      <div className="live-sub-header">
-        <div className="header-left">
-          <div className="uav-selector-wrapper">
-            <span className="sub-title-label">PHÂN TÍCH</span>
-            <span className="dot-divider">•</span>
-            <span className="breadcrumb-sub">Trang chủ &gt; Phân tích</span>
-          </div>
-        </div>
-        <div className="header-right-telemetry">
-          <div className="telemetry-pill">
-            <Crosshair size={14} color="#4ade80" />
-            <span>
-              GPS <strong>12</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill green">
-            <Wifi size={14} />
-            <span>
-              Liên kết <strong>Strong</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill green">
-            <Battery size={14} />
-            <span>
-              Pin <strong>78%</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill clock-pill">{currentTime}</div>
-          <div className="user-profile-badge">
-            <div className="avatar">
-              <User size={16} color="#e6e8ec" />
-            </div>
-            <div className="user-info">
-              <span className="username">admin</span>
-              <span className="user-role">Quản trị viên</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Top 6 KPI Stat Summary Cards */}
       <div className="analytics-top-6-kpi">
         <div className="kpi-card-v2">

@@ -38,47 +38,6 @@ export default function MapView({ payload }) {
 
   return (
     <div className="map-page-layout-v2">
-      {/* Sub Header */}
-      <div className="live-sub-header">
-        <div className="header-left">
-          <div className="uav-selector-wrapper">
-            <span className="sub-title-label">BẢN ĐỒ</span>
-            <span className="dot-divider">•</span>
-            <span className="breadcrumb-sub">Trang chủ &gt; Bản đồ</span>
-          </div>
-        </div>
-        <div className="header-right-telemetry">
-          <div className="telemetry-pill">
-            <Crosshair size={14} color="#4ade80" />
-            <span>
-              GPS <strong>12</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill green">
-            <Wifi size={14} />
-            <span>
-              Liên kết <strong>Strong</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill green">
-            <Battery size={14} />
-            <span>
-              Pin <strong>78%</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill clock-pill">{currentTime}</div>
-          <div className="user-profile-badge">
-            <div className="avatar">
-              <User size={16} color="#e6e8ec" />
-            </div>
-            <div className="user-info">
-              <span className="username">admin</span>
-              <span className="user-role">Quản trị viên</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Top 5 Summary Cards */}
       <div className="map-top-summary-5">
         <div className="sum-card-v2">

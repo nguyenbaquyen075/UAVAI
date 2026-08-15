@@ -212,47 +212,6 @@ export default function Targets({ payload }) {
 
   return (
     <div className="targets-page-v2">
-      {/* Sub-Header Breadcrumb & Telemetry */}
-      <div className="live-sub-header">
-        <div className="header-left">
-          <div className="uav-selector-wrapper">
-            <span className="sub-title-label">MỤC TIÊU</span>
-            <span className="dot-divider">/</span>
-            <span className="breadcrumb-sub">Trang chủ &gt; Mục tiêu</span>
-          </div>
-        </div>
-        <div className="header-right-telemetry">
-          <div className="telemetry-pill">
-            <Crosshair size={14} color="#4ade80" />
-            <span>
-              GPS <strong>12</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill green">
-            <Wifi size={14} />
-            <span>
-              Liên kết <strong>Strong</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill green">
-            <Battery size={14} />
-            <span>
-              Pin hệ thống <strong>78%</strong>
-            </span>
-          </div>
-          <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
-          <div className="user-profile-badge">
-            <div className="avatar">
-              <User size={16} color="#e6e8ec" />
-            </div>
-            <div className="user-info">
-              <span className="username">admin</span>
-              <span className="user-role">Quản trị viên</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Top 5 Stat Cards Summary */}
       <div className="targets-stat-grid">
         <div className="stat-card-v2">

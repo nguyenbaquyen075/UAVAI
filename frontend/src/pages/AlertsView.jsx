@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Bell,
   Crosshair,
@@ -8,264 +8,501 @@ import {
   AlertTriangle,
   Info,
   Search,
-  Map as MapIcon,
-  Download,
+  Maximize2,
+  BellRing,
+  RotateCw,
+  MapPin,
+  Sliders,
+  ChevronDown,
+  ShieldAlert,
 } from "lucide-react";
-import { API_BASE, getLogs, listTargets, listUAVs, logsExportUrl } from "../api";
 import AlertsMap from "../components/AlertsMap";
 import AlertsTimeChart from "../components/AlertsTimeChart";
-import DonutChart from "../components/DonutChart";
 
-const SEVERITY_LABEL = { red: "Nguy hiểm", yellow: "Cảnh báo" };
-const SEVERITY_CLASS = { red: "critical", yellow: "moderate" }; // dùng lại CSS badge-severity có sẵn
-
-export default function AlertsView({ onOpenMap }) {
-  const [currentTime, setCurrentTime] = useState("");
-  const [alerts, setAlerts] = useState([]);
-  const [targets, setTargets] = useState([]);
-  const [uavs, setUavs] = useState([]);
-  const [selectedAlertId, setSelectedAlertId] = useState(null);
-  const [filterSeverity, setFilterSeverity] = useState("");
-  const [filterClass, setFilterClass] = useState("");
-  const [filterUav, setFilterUav] = useState("");
+export default function AlertsView() {
+  const [currentTime, setCurrentTime] = useState("18:42:10 13/05/2024");
+  const [activeTab, setActiveTab] = useState("list");
+  const [selectedAlertId, setSelectedAlertId] = useState(1);
   const [search, setSearch] = useState("");
+  const [timeFilter, setTimeFilter] = useState("24h");
 
-  useEffect(() => {
-    const updateClock = () => {
-      const now = new Date();
-      const timeStr = now.toTimeString().split(" ")[0];
-      const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
-      setCurrentTime(`${timeStr} ${dateStr}`);
-    };
-    updateClock();
-    const interval = setInterval(updateClock, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    async function load() {
-      const params = {};
-      if (filterSeverity) params.severity = filterSeverity;
-      if (filterClass) params.class_ = filterClass;
-      if (filterUav) params.uav_id = filterUav;
-      const [logs, targetList, uavList] = await Promise.all([getLogs(params), listTargets(), listUAVs()]);
-      setAlerts(Array.isArray(logs) ? logs : []);
-      setTargets(Array.isArray(targetList) ? targetList : []);
-      setUavs(Array.isArray(uavList) ? uavList : []);
-    }
-    load();
-    const id = setInterval(load, 4000);
-    return () => clearInterval(id);
-  }, [filterSeverity, filterClass, filterUav]);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return alerts;
-    const q = search.toLowerCase();
-    return alerts.filter((a) => a.class?.toLowerCase().includes(q));
-  }, [alerts, search]);
-
-  const selectedAlert = alerts.find((a) => a.id === selectedAlertId) ?? null;
-  const matchedTarget = selectedAlert
-    ? targets.find((t) => t.track_id === selectedAlert.track_id && t.uav_id === selectedAlert.uav_id)
-    : null;
-
-  function uavName(id) {
-    return uavs.find((u) => u.id === id)?.name ?? `UAV #${id}`;
-  }
-
-  const redCount = alerts.filter((a) => a.severity === "red").length;
-  const yellowCount = alerts.filter((a) => a.severity === "yellow").length;
-
-  const classCounts = {};
-  alerts.forEach((a) => { classCounts[a.class] = (classCounts[a.class] ?? 0) + 1; });
-  const topClass = Object.entries(classCounts).sort((a, b) => b[1] - a[1])[0];
-
-  const uavCounts = {};
-  alerts.forEach((a) => { uavCounts[a.uav_id] = (uavCounts[a.uav_id] ?? 0) + 1; });
-  const topUavAlerts = Object.entries(uavCounts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([uavId, count]) => ({ id: uavName(Number(uavId)), count }));
-  const maxUavCount = Math.max(...topUavAlerts.map((u) => u.count), 1);
-
-  // Bucket cảnh báo theo giờ trong 24h qua (dữ liệu thật từ alert_events)
-  const now = Date.now();
-  const redBuckets = Array(24).fill(0);
-  const yellowBuckets = Array(24).fill(0);
-  alerts.forEach((a) => {
-    const ageHours = (now - new Date(a.timestamp).getTime()) / 3_600_000;
-    if (ageHours < 0 || ageHours >= 24) return;
-    const bucket = 23 - Math.floor(ageHours);
-    if (a.severity === "red") redBuckets[bucket]++;
-    else if (a.severity === "yellow") yellowBuckets[bucket]++;
-  });
-
-  const classSegments = Object.entries(classCounts).map(([cls, n], i) => ({
-    label: cls, value: n, color: ["#f87171", "#60a5fa", "#facc15", "#a855f7", "#4ade80"][i % 5],
-  }));
+  const alertsData = [
+    {
+      id: 1,
+      severity: "critical",
+      severityText: "Nghiêm trọng",
+      title: "UAV_02 mất tín hiệu liên lạc",
+      desc: "Mất tín hiệu hơn 30 giây",
+      uav: "UAV_02",
+      mission: "NV_20240513_01",
+      time: "18:40:21 13/05/2024",
+      status: "Chưa xử lý",
+      statusColor: "red",
+    },
+    {
+      id: 2,
+      severity: "critical",
+      severityText: "Nghiêm trọng",
+      title: "UAV_03 pin rất thấp",
+      desc: "Pin chỉ còn 8%",
+      uav: "UAV_03",
+      mission: "NV_20240513_02",
+      time: "18:37:45 13/05/2024",
+      status: "Chưa xử lý",
+      statusColor: "red",
+    },
+    {
+      id: 3,
+      severity: "important",
+      severityText: "Quan trọng",
+      title: "UAV_01 đi ra ngoài khu vực cho phép",
+      desc: "Vượt ranh giới 1.2 km",
+      uav: "UAV_01",
+      mission: "NV_20240513_03",
+      time: "18:35:12 13/05/2024",
+      status: "Đang xử lý",
+      statusColor: "orange",
+    },
+    {
+      id: 4,
+      severity: "important",
+      severityText: "Quan trọng",
+      title: "Phát hiện xâm nhập khu vực cấm bay",
+      desc: "Có đối tượng lạ trong khu vực",
+      uav: "UAV_04",
+      mission: "NV_20240513_04",
+      time: "18:32:08 13/05/2024",
+      status: "Đang xử lý",
+      statusColor: "orange",
+    },
+    {
+      id: 5,
+      severity: "medium",
+      severityText: "Trung bình",
+      title: "Điều kiện thời tiết xấu",
+      desc: "Gió mạnh cấp 6 tại khu vực",
+      uav: "--",
+      mission: "--",
+      time: "18:30:00 13/05/2024",
+      status: "Đã xử lý",
+      statusColor: "green",
+    },
+    {
+      id: 6,
+      severity: "medium",
+      severityText: "Trung bình",
+      title: "UAV_05 độ cao thấp",
+      desc: "Độ cao hiện tại 45m",
+      uav: "UAV_05",
+      mission: "NV_20240513_05",
+      time: "18:28:55 13/05/2024",
+      status: "Đã xử lý",
+      statusColor: "green",
+    },
+    {
+      id: 7,
+      severity: "info",
+      severityText: "Thông tin",
+      title: "Nhiệm vụ NV_20240513_06 bắt đầu",
+      desc: "UAV_06 đã cất cánh",
+      uav: "UAV_06",
+      mission: "NV_20240513_06",
+      time: "18:25:10 13/05/2024",
+      status: "Đã xử lý",
+      statusColor: "green",
+    },
+    {
+      id: 8,
+      severity: "info",
+      severityText: "Thông tin",
+      title: "Cập nhật phần mềm UAV_02",
+      desc: "Phiên bản 2.1.4 đã sẵn sàng",
+      uav: "UAV_02",
+      mission: "--",
+      time: "18:20:33 13/05/2024",
+      status: "Đã xử lý",
+      statusColor: "green",
+    },
+  ];
 
   return (
-    <div className="alerts-page-layout">
-      <div className="live-sub-header">
-        <div className="header-left">
-          <div className="uav-selector-wrapper">
-            <Bell size={18} color="#4ade80" />
-            <span className="sub-title-label">CẢNH BÁO</span>
-            <span className="dot-divider">/</span>
-            <span className="breadcrumb-sub">Trang chủ &gt; Cảnh báo</span>
+    <div className="alerts-page-layout-v2">
+      {/* Top 5 Summary Cards */}
+      <div className="alerts-top-5-summary">
+        <div className="alerts-sum-card card-red">
+          <div className="ic-box icon-red"><AlertTriangle size={18} /></div>
+          <div className="card-info">
+            <span className="lbl">Cảnh báo nghiêm trọng</span>
+            <span className="val text-red">3</span>
+            <span className="sub-trend text-red">▲ +2 so với hôm qua</span>
           </div>
         </div>
-        <div className="header-right-telemetry">
-          <div className="telemetry-pill"><Crosshair size={14} color="#4ade80" /><span>GPS <strong>12</strong></span></div>
-          <div className="telemetry-pill green"><Wifi size={14} /><span>Liên kết <strong>Strong</strong></span></div>
-          <div className="telemetry-pill green"><Battery size={14} /><span>Pin <strong>78%</strong></span></div>
-          <div className="telemetry-pill clock-pill"><span>{currentTime || "-"}</span></div>
-          <div className="user-profile-badge">
-            <div className="avatar"><User size={16} color="#e6e8ec" /></div>
-            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
+
+        <div className="alerts-sum-card card-yellow">
+          <div className="ic-box icon-yellow"><AlertTriangle size={18} /></div>
+          <div className="card-info">
+            <span className="lbl">Cảnh báo quan trọng</span>
+            <span className="val text-yellow">7</span>
+            <span className="sub-trend text-orange">▲ +1 so với hôm qua</span>
+          </div>
+        </div>
+
+        <div className="alerts-sum-card card-orange">
+          <div className="ic-box icon-orange"><Bell size={18} /></div>
+          <div className="card-info">
+            <span className="lbl">Cảnh báo trung bình</span>
+            <span className="val">15</span>
+            <span className="sub-trend text-green">▼ -3 so với hôm qua</span>
+          </div>
+        </div>
+
+        <div className="alerts-sum-card card-blue">
+          <div className="ic-box icon-blue"><Info size={18} /></div>
+          <div className="card-info">
+            <span className="lbl">Cảnh báo thông tin</span>
+            <span className="val">28</span>
+            <span className="sub-trend text-green">▼ -5 so với hôm qua</span>
+          </div>
+        </div>
+
+        <div className="alerts-sum-card total-donut-sum-card">
+          <div className="svg-donut-box-sm">
+            <svg width="70" height="70" viewBox="0 0 42 42" className="donut-svg">
+              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#1e293b" strokeWidth="4.5" />
+              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#ef4444" strokeWidth="4.5" strokeDasharray="5.7 94.3" strokeDashoffset="25" />
+              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#f59e0b" strokeWidth="4.5" strokeDasharray="13.2 86.8" strokeDashoffset="19.3" />
+              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#f97316" strokeWidth="4.5" strokeDasharray="28.3 71.7" strokeDashoffset="6.1" />
+              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#3b82f6" strokeWidth="4.5" strokeDasharray="52.8 47.2" strokeDashoffset="77.8" />
+            </svg>
+            <div className="donut-center-text">
+              <strong className="val">53</strong>
+            </div>
+          </div>
+
+          <div className="total-right-legend">
+            <span className="total-lbl">Tổng cảnh báo</span>
+            <div className="lgd-list-mini">
+              <div className="item"><span className="dot dot-red">●</span><span>Nghiêm trọng (5.7%)</span></div>
+              <div className="item"><span className="dot dot-yellow">●</span><span>Quan trọng (13.2%)</span></div>
+              <div className="item"><span className="dot dot-orange">●</span><span>Trung bình (28.3%)</span></div>
+              <div className="item"><span className="dot dot-blue">●</span><span>Thông tin (52.8%)</span></div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* KPI row — chỉ 2 mức nghiêm trọng thật (red/yellow), không bịa 4 mức */}
-      <div className="alerts-kpi-grid">
-        <div className="kpi-card border-red">
-          <div className="kpi-icon red"><AlertTriangle size={20} color="#f87171" /></div>
-          <div className="kpi-body"><span className="kpi-label">MỨC NGUY HIỂM</span><div className="kpi-val red-text">{redCount}</div></div>
-        </div>
-        <div className="kpi-card border-yellow">
-          <div className="kpi-icon yellow"><Bell size={20} color="#facc15" /></div>
-          <div className="kpi-body"><span className="kpi-label">MỨC CẢNH BÁO</span><div className="kpi-val yellow-text">{yellowCount}</div></div>
-        </div>
-        <div className="kpi-card border-blue">
-          <div className="kpi-icon blue"><Info size={20} color="#60a5fa" /></div>
-          <div className="kpi-body"><span className="kpi-label">LOẠI PHỔ BIẾN NHẤT</span><div className="kpi-val blue-text">{topClass ? `${topClass[0]} (${topClass[1]})` : "-"}</div></div>
-        </div>
-        <div className="kpi-card total-donut-kpi-card">
-          <div className="total-kpi-donut-box">
-            <DonutChart segments={[{ label: "Nguy hiểm", value: redCount, color: "#ef4444" }, { label: "Cảnh báo", value: yellowCount, color: "#facc15" }]} size={60} />
+      {/* Main Split Section: Table + Map + Detail */}
+      <div className="alerts-main-split-v2">
+        {/* Section 1: DANH SÁCH CẢNH BÁO */}
+        <div className="dashboard-panel alerts-table-panel">
+          <div className="panel-tabs-header">
+            <div className="tabs-flex">
+              <button className={`tab-btn ${activeTab === "list" ? "active" : ""}`} onClick={() => setActiveTab("list")}>Danh sách cảnh báo</button>
+              <button className={`tab-btn ${activeTab === "history" ? "active" : ""}`} onClick={() => setActiveTab("history")}>Lịch sử cảnh báo</button>
+            </div>
           </div>
-          <div className="kpi-body"><span className="kpi-label">TỔNG CẢNH BÁO</span><div className="kpi-val">{alerts.length}</div></div>
-        </div>
-      </div>
 
-      {/* Row 2: table / map / detail */}
-      <div className="alerts-main-split-grid">
-        <div className="alerts-table-column">
-          <div className="table-filter-row">
-            <div className="search-box"><span><Search size={14} /></span><input type="text" placeholder="Tìm theo loại đối tượng..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-            <select className="filter-select" value={filterSeverity} onChange={(e) => setFilterSeverity(e.target.value)}>
-              <option value="">Tất cả mức độ</option>
-              <option value="red">Nguy hiểm</option>
-              <option value="yellow">Cảnh báo</option>
-            </select>
-            <select className="filter-select" value={filterUav} onChange={(e) => setFilterUav(e.target.value)}>
-              <option value="">Tất cả UAV</option>
-              {uavs.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-            <a className="btn-action dark-btn" href={logsExportUrl({ severity: filterSeverity || undefined, class_: filterClass || undefined })} style={{ textDecoration: "none" }}>
-              <Download size={14} /> CSV
-            </a>
+          <div className="alerts-filters-row">
+            <div className="search-box-wrap">
+              <Search size={14} className="search-ic" />
+              <input type="text" placeholder="Tìm kiếm cảnh báo..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <select className="filter-select-sm"><option>Tất cả mức độ</option></select>
+            <select className="filter-select-sm"><option>Tất cả loại</option></select>
+            <select className="filter-select-sm"><option>Tất cả trạng thái</option></select>
           </div>
 
           <div className="alerts-table-wrapper">
-            <table>
-              <thead><tr><th>MỨC ĐỘ</th><th>ĐỐI TƯỢNG</th><th>UAV</th><th>THỜI GIAN</th></tr></thead>
+            <table className="alerts-table">
+              <thead>
+                <tr>
+                  <th>MỨC ĐỘ</th>
+                  <th>NỘI DUNG CẢNH BÁO</th>
+                  <th>UAV / NHIỆM VỤ</th>
+                  <th>THỜI GIAN</th>
+                  <th>TRẠNG THÁI</th>
+                </tr>
+              </thead>
               <tbody>
-                {filtered.map((item) => (
-                  <tr key={item.id} className={`alert-tr ${item.id === selectedAlertId ? "selected" : ""}`} onClick={() => setSelectedAlertId(item.id)}>
-                    <td><span className={`badge-severity ${SEVERITY_CLASS[item.severity] ?? "info"}`}>{SEVERITY_LABEL[item.severity] ?? item.severity}</span></td>
-                    <td><div className="alert-title-cell"><strong>{item.class}</strong><span className="sub-desc">{item.distance_m} m</span></div></td>
-                    <td className="uav-cell">{uavName(item.uav_id)}</td>
-                    <td className="font-mono text-muted">{new Date(item.timestamp).toLocaleString("vi-VN")}</td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: "12px" }}>Chưa có cảnh báo phù hợp bộ lọc.</td></tr>}
+                {alertsData.map((a) => {
+                  const isSelected = a.id === selectedAlertId;
+                  return (
+                    <tr
+                      key={a.id}
+                      className={`alert-tr ${isSelected ? "selected" : ""}`}
+                      onClick={() => setSelectedAlertId(a.id)}
+                    >
+                      <td>
+                        <span className={`sev-tag ${a.severity}`}>
+                          {a.severity === "critical" && "⚠️ "}
+                          {a.severity === "important" && "⚠️ "}
+                          {a.severity === "medium" && "🔔 "}
+                          {a.severity === "info" && "ℹ️ "}
+                          {a.severityText}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="alert-content-cell">
+                          <span className="main-title">{a.title}</span>
+                          <span className="sub-desc">{a.desc}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="uav-mission-cell">
+                          <span className="u-name">{a.uav}</span>
+                          {a.mission !== "--" && <span className="m-name">Nhiệm vụ: {a.mission}</span>}
+                        </div>
+                      </td>
+                      <td className="font-mono text-muted">{a.time}</td>
+                      <td>
+                        <span className={`status-badge ${a.statusColor}`}>
+                          {a.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          <div className="table-footer-pagination"><span className="footer-count">Hiển thị {filtered.length} / {alerts.length} cảnh báo (tối đa 500 bản ghi gần nhất)</span></div>
-        </div>
 
-        <AlertsMap alerts={filtered} targets={targets} selectedAlert={selectedAlertId} onSelectAlert={setSelectedAlertId} />
-
-        <div className="alert-detail-column">
-          <div className="detail-header-row"><span className="detail-title">CHI TIẾT CẢNH BÁO</span></div>
-          {!selectedAlert ? (
-            <p className="muted">Chọn một dòng trong bảng để xem chi tiết.</p>
-          ) : (
-            <>
-              <div className="detail-headline-box">
-                <span className="headline-icon"><AlertTriangle size={20} color="#f87171" /></span>
-                <div className="headline-meta">
-                  <h3>{selectedAlert.class} · {selectedAlert.distance_m} m</h3>
-                  <span className="alert-id-code">ID: #{selectedAlert.id} · Track {selectedAlert.track_id}</span>
-                </div>
-              </div>
-
-              <img
-                src={`${API_BASE}/api/logs/${selectedAlert.id}/snapshot`}
-                alt="snapshot"
-                style={{ width: "100%", borderRadius: "6px", marginBottom: "10px", border: "1px solid #1e293b" }}
-                onError={(e) => { e.target.style.display = "none"; }}
-              />
-
-              <div className="alert-meta-grid">
-                <div className="meta-row"><span className="lbl">Mức độ:</span><strong className={`val-severity ${SEVERITY_CLASS[selectedAlert.severity] ?? "info"}`}>{SEVERITY_LABEL[selectedAlert.severity] ?? selectedAlert.severity}</strong></div>
-                <div className="meta-row"><span className="lbl">UAV:</span><strong className="val">{uavName(selectedAlert.uav_id)}</strong></div>
-                <div className="meta-row"><span className="lbl">Thời gian:</span><strong className="val font-mono">{new Date(selectedAlert.timestamp).toLocaleString("vi-VN")}</strong></div>
-                <div className="meta-row"><span className="lbl">Khoảng cách:</span><strong className="val">{selectedAlert.distance_m} m</strong></div>
-                <div className="meta-row"><span className="lbl">Toạ độ ước tính:</span><strong className="val font-mono">{matchedTarget?.lat != null ? `${matchedTarget.lat.toFixed(5)}°, ${matchedTarget.lon.toFixed(5)}°` : "Không xác định được"}</strong></div>
-              </div>
-
-              <div className="alert-actions-section">
-                <span className="section-title">HÀNH ĐỘNG</span>
-                <div className="action-btn-grid">
-                  <button className="btn-action dark-btn" onClick={() => onOpenMap && onOpenMap()} disabled={!onOpenMap}>
-                    <MapIcon size={14} /> Xem trên bản đồ
-                  </button>
-                  <button className="btn-action red-emergency" disabled title="Chưa có hệ thống thông báo khẩn cấp">Đánh dấu khẩn cấp</button>
-                  <button className="btn-action blue-outline" disabled title="Chưa nối MAVLink thật">Kích hoạt RTH</button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Row 3: analytics thật */}
-      <div className="alerts-bottom-grid">
-        <AlertsTimeChart redBuckets={redBuckets} yellowBuckets={yellowBuckets} />
-
-        <div className="type-donut-card">
-          <div className="card-header-row"><span className="card-title">CẢNH BÁO THEO LOẠI ĐỐI TƯỢNG</span></div>
-          {classSegments.length === 0 ? <p className="muted">Chưa có dữ liệu.</p> : <DonutChart segments={classSegments} size={120} />}
-        </div>
-
-        <div className="top-uav-card">
-          <div className="card-header-row"><span className="card-title">TOP UAV CÓ NHIỀU CẢNH BÁO</span></div>
-          {topUavAlerts.length === 0 && <p className="muted">Chưa có dữ liệu.</p>}
-          <div className="uav-hbars-list">
-            {topUavAlerts.map((u) => (
-              <div key={u.id} className="hbar-item">
-                <span className="u-name">{u.id}</span>
-                <div className="hbar-track"><div className="hbar-fill" style={{ width: `${(u.count / maxUavCount) * 100}%`, background: "#ef4444" }} /></div>
-                <strong className="u-val">{u.count}</strong>
-              </div>
-            ))}
+          <div className="alerts-pagination-bar">
+            <span className="count-text">Hiển thị 1 - 8 của 53 cảnh báo</span>
+            <div className="pages-flex">
+              <button className="page-btn">&lt;</button>
+              <button className="page-btn active">1</button>
+              <button className="page-btn">2</button>
+              <button className="page-btn">3</button>
+              <button className="page-btn">4</button>
+              <button className="page-btn">5</button>
+              <button className="page-btn">6</button>
+              <button className="page-btn">7</button>
+              <button className="page-btn">...</button>
+              <button className="page-btn">&gt;</button>
+            </div>
           </div>
         </div>
 
-        <div className="recent-stream-card">
-          <div className="card-header-row"><span className="card-title">CẢNH BÁO GẦN ĐÂY</span></div>
-          <div className="stream-items-list">
-            {alerts.slice(0, 5).map((a) => (
-              <div key={a.id} className="stream-item">
-                <span className="st-time font-mono">{new Date(a.timestamp).toLocaleTimeString("vi-VN")}</span>
-                <span className="st-title">{a.class} · {a.distance_m}m · {uavName(a.uav_id)}</span>
-                <span className={`badge-severity ${SEVERITY_CLASS[a.severity] ?? "info"}`}>{SEVERITY_LABEL[a.severity] ?? a.severity}</span>
+        {/* Section 2: VỊ TRÍ CẢNH BÁO Map */}
+        <div className="dashboard-panel alerts-map-panel">
+          <div className="panel-section-header">
+            <h3 className="section-title">VỊ TRÍ CẢNH BÁO</h3>
+            <div className="map-actions">
+              <select className="select-sm"><option>Tất cả UAV</option></select>
+              <button className="btn-ic"><Maximize2 size={14} /></button>
+            </div>
+          </div>
+          <div className="map-leaflet-wrapper">
+            <AlertsMap />
+          </div>
+          <div className="map-bottom-legend-row">
+            <span className="lgd-item"><span className="dot dot-red">●</span> Nghiêm trọng</span>
+            <span className="lgd-item"><span className="dot dot-yellow">●</span> Quan trọng</span>
+            <span className="lgd-item"><span className="dot dot-orange">●</span> Trung bình</span>
+            <span className="lgd-item"><span className="dot dot-blue">●</span> Thông tin</span>
+          </div>
+        </div>
+
+        {/* Section 3: CHI TIẾT CẢNH BÁO Sidebar */}
+        <div className="dashboard-panel alert-detail-panel">
+          <div className="panel-section-header">
+            <h3 className="section-title">CHI TIẾT CẢNH BÁO</h3>
+            <span className="status-pill red">Chưa xử lý</span>
+          </div>
+
+          <div className="detail-headline-card">
+            <ShieldAlert size={24} className="ic-red" />
+            <div className="headline-text">
+              <h4 className="title">UAV_02 mất tín hiệu liên lạc</h4>
+              <span className="id-code">ID: AL_20240513_001</span>
+            </div>
+          </div>
+
+          <div className="detail-kv-list">
+            <div className="kv-row">
+              <span className="lbl">Mức độ:</span>
+              <strong className="val text-red">Nghiêm trọng</strong>
+            </div>
+            <div className="kv-row">
+              <span className="lbl">Loại cảnh báo:</span>
+              <span className="val">Mất tín hiệu</span>
+            </div>
+            <div className="kv-row">
+              <span className="lbl">UAV:</span>
+              <span className="val">UAV_02 - Eagle Pro</span>
+            </div>
+            <div className="kv-row">
+              <span className="lbl">Nhiệm vụ:</span>
+              <span className="val">NV_20240513_01</span>
+            </div>
+            <div className="kv-row">
+              <span className="lbl">Thời gian:</span>
+              <span className="val font-mono">18:40:21 13/05/2024</span>
+            </div>
+            <div className="kv-row">
+              <span className="lbl">Thời gian phát hiện:</span>
+              <span className="val font-mono">18:39:51 13/05/2024</span>
+            </div>
+            <div className="kv-row">
+              <span className="lbl">Vị trí cuối cùng:</span>
+              <span className="val font-mono">21.027123° N, 105.854567° E</span>
+            </div>
+            <div className="kv-row">
+              <span className="lbl">Độ cao cuối cùng:</span>
+              <span className="val font-mono">120 m</span>
+            </div>
+            <div className="kv-row">
+              <span className="lbl">Tốc độ cuối cùng:</span>
+              <span className="val font-mono">45 km/h</span>
+            </div>
+            <div className="kv-row desc-row">
+              <span className="lbl">Mô tả:</span>
+              <p className="desc-text">UAV mất tín hiệu liên lạc với trạm điều khiển thời gian mất tín hiệu hơn 30 giây.</p>
+            </div>
+          </div>
+
+          <div className="action-buttons-group">
+            <span className="section-label">HÀNH ĐỘNG</span>
+            <div className="action-grid">
+              <button className="btn-act red-outline">
+                <BellRing size={14} color="#ef4444" /> Đánh dấu khẩn cấp
+              </button>
+              <button className="btn-act blue-outline">
+                <RotateCw size={14} color="#3b82f6" /> Thử kết nối lại
+              </button>
+              <button className="btn-act dark-outline">
+                <MapPin size={14} color="#94a3b8" /> Xem trên bản đồ
+              </button>
+              <button className="btn-act dark-outline">
+                <Sliders size={14} color="#94a3b8" /> Khác <ChevronDown size={12} color="#94a3b8" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Row Grid: 4 Analytics Cards */}
+      <div className="alerts-bottom-4col">
+        {/* Card 1: THỐNG KÊ CẢNH BÁO THEO THỜI GIAN */}
+        <AlertsTimeChart />
+
+        {/* Card 2: THỐNG KÊ CẢNH BÁO THEO LOẠI */}
+        <div className="dashboard-panel btm-donut-card">
+          <div className="panel-section-header">
+            <h3 className="section-title">THỐNG KÊ CẢNH BÁO THEO LOẠI</h3>
+          </div>
+          <div className="type-donut-body">
+            <div className="svg-donut-box-sm">
+              <svg width="90" height="90" viewBox="0 0 42 42" className="donut-svg">
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#1e293b" strokeWidth="4.5" />
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#ef4444" strokeWidth="4.5" strokeDasharray="22.6 77.4" strokeDashoffset="25" />
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#f59e0b" strokeWidth="4.5" strokeDasharray="17.0 83.0" strokeDashoffset="2.4" />
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#f97316" strokeWidth="4.5" strokeDasharray="15.1 84.9" strokeDashoffset="85.4" />
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#22c55e" strokeWidth="4.5" strokeDasharray="13.2 86.8" strokeDashoffset="70.3" />
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#06b6d4" strokeWidth="4.5" strokeDasharray="11.3 88.7" strokeDashoffset="57.1" />
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#94a3b8" strokeWidth="4.5" strokeDasharray="20.8 79.2" strokeDashoffset="45.8" />
+              </svg>
+              <div className="donut-center-text">
+                <strong className="val">53</strong>
+                <span className="lbl">Tổng số</span>
               </div>
-            ))}
-            {alerts.length === 0 && <p className="muted">Chưa có cảnh báo.</p>}
+            </div>
+            <div className="type-legend-list">
+              <div className="lgd-item"><span className="dot dot-red">●</span><span>Mất tín hiệu <strong>12 (22.6%)</strong></span></div>
+              <div className="lgd-item"><span className="dot dot-yellow">●</span><span>Pin yếu <strong>9 (17.0%)</strong></span></div>
+              <div className="lgd-item"><span className="dot dot-orange">●</span><span>Vượt ranh giới <strong>8 (15.1%)</strong></span></div>
+              <div className="lgd-item"><span className="dot dot-green">●</span><span>Xâm nhập khu vực <strong>7 (13.2%)</strong></span></div>
+              <div className="lgd-item"><span className="dot dot-cyan">●</span><span>Thời tiết xấu <strong>6 (11.3%)</strong></span></div>
+              <div className="lgd-item"><span className="dot dot-grey">●</span><span>Khác <strong>11 (20.8%)</strong></span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: TOP UAV CÓ NHIỀU CẢNH BÁO */}
+        <div className="dashboard-panel btm-top-uav-card">
+          <div className="panel-section-header">
+            <h3 className="section-title">TOP UAV CÓ NHIỀU CẢNH BÁO</h3>
+          </div>
+          <div className="top-uav-bars-list">
+            <div className="uav-bar-item">
+              <span className="name font-mono">UAV_02</span>
+              <div className="bar-track"><div className="bar-fill red" style={{ width: "100%" }} /></div>
+              <span className="val font-mono">15 (28.3%)</span>
+            </div>
+
+            <div className="uav-bar-item">
+              <span className="name font-mono">UAV_01</span>
+              <div className="bar-track"><div className="bar-fill orange" style={{ width: "80%" }} /></div>
+              <span className="val font-mono">12 (22.6%)</span>
+            </div>
+
+            <div className="uav-bar-item">
+              <span className="name font-mono">UAV_03</span>
+              <div className="bar-track"><div className="bar-fill yellow" style={{ width: "60%" }} /></div>
+              <span className="val font-mono">9 (17.0%)</span>
+            </div>
+
+            <div className="uav-bar-item">
+              <span className="name font-mono">UAV_04</span>
+              <div className="bar-track"><div className="bar-fill green" style={{ width: "46.7%" }} /></div>
+              <span className="val font-mono">7 (13.2%)</span>
+            </div>
+
+            <div className="uav-bar-item">
+              <span className="name font-mono">UAV_05</span>
+              <div className="bar-track"><div className="bar-fill cyan" style={{ width: "40%" }} /></div>
+              <span className="val font-mono">6 (11.3%)</span>
+            </div>
+
+            <div className="uav-bar-item">
+              <span className="name font-mono">UAV_06</span>
+              <div className="bar-track"><div className="bar-fill blue" style={{ width: "26.7%" }} /></div>
+              <span className="val font-mono">4 (7.5%)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 4: CẢNH BÁO GẦN ĐÂY */}
+        <div className="dashboard-panel btm-recent-card">
+          <div className="panel-section-header">
+            <h3 className="section-title">CẢNH BÁO GẦN ĐÂY</h3>
+            <a href="#all" className="link-blue-sm">Xem tất cả</a>
+          </div>
+          <div className="recent-alerts-stream">
+            <div className="stream-row">
+              <AlertTriangle size={14} className="ic-red" />
+              <span className="time font-mono">18:40:21</span>
+              <span className="title">UAV_02 mất tín hiệu liên lạc</span>
+              <span className="badge red">Nghiêm trọng</span>
+            </div>
+
+            <div className="stream-row">
+              <AlertTriangle size={14} className="ic-red" />
+              <span className="time font-mono">18:37:45</span>
+              <span className="title">UAV_03 pin rất thấp</span>
+              <span className="badge red">Nghiêm trọng</span>
+            </div>
+
+            <div className="stream-row">
+              <AlertTriangle size={14} className="ic-yellow" />
+              <span className="time font-mono">18:35:12</span>
+              <span className="title">UAV_01 đi ra ngoài khu vực cho phép</span>
+              <span className="badge yellow">Quan trọng</span>
+            </div>
+
+            <div className="stream-row">
+              <AlertTriangle size={14} className="ic-yellow" />
+              <span className="time font-mono">18:32:08</span>
+              <span className="title">Phát hiện xâm nhập khu vực cấm bay</span>
+              <span className="badge yellow">Quan trọng</span>
+            </div>
+
+            <div className="stream-row">
+              <Bell size={14} className="ic-orange" />
+              <span className="time font-mono">18:30:00</span>
+              <span className="title">Điều kiện thời tiết xấu</span>
+              <span className="badge orange">Trung bình</span>
+            </div>
           </div>
         </div>
       </div>
