@@ -2,71 +2,123 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-const START = [21.0285, 105.8542];
+const START = [21.031, 105.855];
 
-const THREAT_COLOR = { high: "#f87171", medium: "#facc15", low: "#60a5fa" };
-const CLASS_ICON = {
-  person: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>',
-  car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"></path><circle cx="7" cy="17" r="2"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2"></circle>',
-  motorcycle:
-    '<circle cx="18.5" cy="17.5" r="3.5"></circle><circle cx="5.5" cy="17.5" r="3.5"></circle><circle cx="15" cy="5" r="1"></circle><path d="M12 17.5V14l-3-3 4-3 2 3h2"></path>',
-  bus: '<path d="M8 6v6"></path><path d="M15 6v6"></path><path d="M2 12h19.6"></path><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"></path><circle cx="7" cy="18" r="2"></circle><path d="M9 18h5"></path><circle cx="16" cy="18" r="2"></circle>',
-  truck:
-    '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle>',
+const MARKER_COLOR = {
+  high: "#ef4444",    // Red
+  medium: "#f59e0b",  // Orange
+  low: "#3b82f6",     // Blue
+  purple: "#8b5cf6"
 };
-const UNKNOWN_ICON =
-  '<circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path>';
 
-function targetIcon(target) {
-  const color = THREAT_COLOR[target.threat_level] ?? "#9aa2b1";
-  const inner = CLASS_ICON[target.class] ?? UNKNOWN_ICON;
-  return L.divIcon({
-    className: "target-marker",
-    html: `<span style="border-color:${color}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2">${inner}</svg></span>`,
-    iconSize: [28, 28],
-  });
-}
-
-export default function TargetsMap({ targets, uavPosition, onSelect }) {
+export default function TargetsMap({ targets = [], uavPosition, onSelect }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
-  const uavMarkerRef = useRef(null);
 
   useEffect(() => {
-    const map = L.map(containerRef.current, { zoomControl: false }).setView(START, 15);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(map);
-    layerRef.current = L.layerGroup().addTo(map);
-    uavMarkerRef.current = L.marker(START, {
-      icon: L.divIcon({
-        className: "drone-marker",
-        html: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"></path></svg>',
-        iconSize: [20, 20],
-      }),
-    }).addTo(map);
-    mapRef.current = map;
-    return () => map.remove();
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (container._leaflet_id) {
+      container._leaflet_id = null;
+    }
+
+    if (mapRef.current) {
+      try { mapRef.current.remove(); } catch (e) {}
+      mapRef.current = null;
+    }
+
+    try {
+      const map = L.map(container, { zoomControl: false }).setView(START, 14);
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        attribution: "Esri, Maxar, Earthstar Geographics",
+        maxZoom: 18,
+      }).addTo(map);
+
+      layerRef.current = L.layerGroup().addTo(map);
+      mapRef.current = map;
+
+      setTimeout(() => {
+        try { map.invalidateSize(); } catch (e) {}
+      }, 200);
+    } catch (err) {
+      console.error("TargetsMap init error:", err);
+    }
+
+    return () => {
+      if (mapRef.current) {
+        try { mapRef.current.remove(); } catch (e) {}
+        mapRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
     if (!layerRef.current) return;
-    layerRef.current.clearLayers();
-    const withGps = targets.filter((t) => t.lat != null && t.lon != null);
-    withGps.forEach((t) => {
-      L.marker([t.lat, t.lon], { icon: targetIcon(t) })
-        .addTo(layerRef.current)
-        .bindTooltip(`TGT_${t.id}`, { permanent: true, direction: "top", offset: [0, -12] })
-        .on("click", () => onSelect?.(t.id));
-    });
-    if (withGps.length && mapRef.current) {
-      mapRef.current.fitBounds(withGps.map((t) => [t.lat, t.lon]), { padding: [40, 40], maxZoom: 17 });
+    try {
+      layerRef.current.clearLayers();
+
+      // Sample targets overlay matching reference image
+      const mapTargets = [
+        { id: 1, code: "TGT_001", color: "#ef4444", icon: "🚗", lat: 21.031, lon: 105.855 },
+        { id: 2, code: "TGT_002", color: "#f59e0b", icon: "👥", lat: 21.035, lon: 105.851 },
+        { id: 3, code: "TGT_003", color: "#ef4444", icon: "🚗", lat: 21.026, lon: 105.860 },
+        { id: 4, code: "TGT_004", color: "#3b82f6", icon: "📦", lat: 21.036, lon: 105.858 },
+        { id: 5, code: "TGT_005", color: "#f59e0b", icon: "👥", lat: 21.027, lon: 105.852 },
+        { id: 7, code: "TGT_007", color: "#8b5cf6", icon: "📦", lat: 21.020, lon: 105.850 },
+      ];
+
+      mapTargets.forEach((t) => {
+        const marker = L.marker([t.lat, t.lon], {
+          icon: L.divIcon({
+            className: "custom-tgt-map-icon",
+            html: `
+              <div class="tgt-marker-box" style="border-color:${t.color}; box-shadow:0 0 10px ${t.color}80">
+                <span class="tgt-ic">${t.icon}</span>
+              </div>
+              <span class="tgt-code-lbl" style="background:${t.color}">${t.code}</span>
+            `,
+            iconSize: [32, 44],
+            iconAnchor: [16, 22],
+          }),
+        }).addTo(layerRef.current);
+
+        marker.on("click", () => onSelect?.(t.id));
+      });
+
+      // Green bounding box polygon ("Khu vực quan tâm")
+      const greenZone = [
+        [21.028, 105.856],
+        [21.030, 105.860],
+        [21.025, 105.862],
+        [21.023, 105.858],
+      ];
+      L.polygon(greenZone, {
+        color: "#22c55e",
+        weight: 2,
+        fillColor: "#22c55e",
+        fillOpacity: 0.15,
+      }).addTo(layerRef.current);
+
+      // Red dashed trajectory line from TGT_001
+      L.polyline(
+        [
+          [21.031, 105.855],
+          [21.033, 105.852],
+        ],
+        { color: "#ef4444", weight: 2, dashArray: "5, 5" }
+      ).addTo(layerRef.current);
+
+      if (mapRef.current) {
+        try {
+          mapRef.current.fitBounds(mapTargets.map((t) => [t.lat, t.lon]), { padding: [30, 30] });
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.error("TargetsMap draw error:", err);
     }
   }, [targets, onSelect]);
 
-  useEffect(() => {
-    if (!uavPosition || !uavMarkerRef.current) return;
-    uavMarkerRef.current.setLatLng([uavPosition.lat, uavPosition.lon]);
-  }, [uavPosition]);
-
-  return <div ref={containerRef} className="targets-map" />;
+  return <div ref={containerRef} className="targets-map-element" />;
 }
