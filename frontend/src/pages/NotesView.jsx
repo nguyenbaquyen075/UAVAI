@@ -1,330 +1,548 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import {
   FileText,
-  Battery,
   Crosshair,
   Wifi,
+  Battery,
   User,
   Search,
   Plane,
-  ClipboardList,
+  CloudRain,
+  AlertTriangle,
+  Wrench,
+  RotateCw,
+  Waves,
+  Users,
   Star,
-  Clock,
-  X,
+  Edit2,
+  MoreVertical,
+  Calendar,
+  Download,
   Bold,
   Italic,
-  Trash2,
+  Underline,
+  List,
+  ListOrdered,
+  Link2,
+  Image as ImageIcon,
+  Table,
+  Code,
+  Undo,
+  Redo,
+  X,
+  Plus,
 } from "lucide-react";
-import { createNote, deleteNote, listMissions, listNotes, listUAVs, patchNote } from "../api";
-
-function fmt(iso) {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleString("vi-VN");
-}
 
 export default function NotesView() {
-  const [currentTime, setCurrentTime] = useState("");
-  const [activeTab, setActiveTab] = useState("all"); // all | starred
-  const [notes, setNotes] = useState([]);
-  const [uavs, setUavs] = useState([]);
-  const [missions, setMissions] = useState([]);
-  const [selectedNoteId, setSelectedNoteId] = useState(null);
+  const [activeTab, setActiveTab] = useState("all");
+  const [selectedNoteId, setSelectedNoteId] = useState(1);
+  const [currentTime, setCurrentTime] = useState("18:42:10 13/05/2024");
   const [search, setSearch] = useState("");
-  const [filterUav, setFilterUav] = useState("");
+  const [tags, setTags] = useState(["khu vực A", "kiểm tra", "bình thường", "giám sát"]);
+  const [showAddTag, setShowAddTag] = useState(false);
+  const [newTagText, setNewTagText] = useState("");
+  const [quickNote, setQuickNote] = useState("");
 
-  const [showNewForm, setShowNewForm] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newUavId, setNewUavId] = useState("");
-  const [newMissionId, setNewMissionId] = useState("");
+  const notesList = [
+    {
+      id: 1,
+      icon: FileText,
+      iconColor: "#22c55e",
+      title: "Kiểm tra khu vực mục tiêu A",
+      uav: "UAV_02",
+      mission: "NV_20240513_01",
+      time: "18:35",
+      starred: true,
+    },
+    {
+      id: 2,
+      icon: CloudRain,
+      iconColor: "#3b82f6",
+      title: "Điều kiện thời tiết bất thường",
+      uav: "UAV_03",
+      mission: "NV_20240513_02",
+      time: "17:40",
+      starred: false,
+    },
+    {
+      id: 3,
+      icon: AlertTriangle,
+      iconColor: "#ef4444",
+      title: "Phát hiện hoạt động nghi vấn",
+      uav: "UAV_01",
+      mission: "NV_20240512_08",
+      time: "16:20",
+      starred: true,
+    },
+    {
+      id: 4,
+      icon: Wrench,
+      iconColor: "#94a3b8",
+      title: "Ghi chú bảo trì định kỳ UAV_02",
+      uav: "UAV_02",
+      mission: "Bảo trì",
+      time: "15:10",
+      starred: false,
+    },
+    {
+      id: 5,
+      icon: RotateCw,
+      iconColor: "#a855f7",
+      title: "Thay đổi kế hoạch bay",
+      uav: "UAV_01",
+      mission: "NV_20240512_07",
+      time: "14:05",
+      starred: false,
+    },
+    {
+      id: 6,
+      icon: Waves,
+      iconColor: "#06b6d4",
+      title: "Quan sát khu vực sông",
+      uav: "UAV_03",
+      mission: "NV_20240512_05",
+      time: "11:30",
+      starred: true,
+    },
+    {
+      id: 7,
+      icon: Users,
+      iconColor: "#f59e0b",
+      title: "Họp giao ban sáng",
+      uav: "Chung",
+      mission: "Họp",
+      time: "09:15",
+      starred: false,
+    },
+    {
+      id: 8,
+      icon: Battery,
+      iconColor: "#eab308",
+      title: "Lưu ý về pin và hiệu suất",
+      uav: "UAV_04",
+      mission: "Bảo trì",
+      time: "12/05",
+      starred: false,
+    },
+  ];
 
-  const [draftContent, setDraftContent] = useState("");
-  const [newTagInput, setNewTagInput] = useState("");
-  const [showAddTagInput, setShowAddTagInput] = useState(false);
-  const [quickNoteText, setQuickNoteText] = useState("");
-
-  useEffect(() => {
-    const updateClock = () => {
-      const now = new Date();
-      const timeStr = now.toTimeString().split(" ")[0];
-      const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
-      setCurrentTime(`${timeStr} ${dateStr}`);
-    };
-    updateClock();
-    const interval = setInterval(updateClock, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function reload() {
-    const list = await listNotes();
-    setNotes(Array.isArray(list) ? list : []);
-  }
-
-  useEffect(() => {
-    reload();
-    listUAVs().then((l) => setUavs(Array.isArray(l) ? l : []));
-    listMissions().then((l) => setMissions(Array.isArray(l) ? l : []));
-    const id = setInterval(reload, 5000);
-    return () => clearInterval(id);
-  }, []);
-
-  const selectedNote = notes.find((n) => n.id === selectedNoteId) ?? null;
-
-  useEffect(() => {
-    setDraftContent(selectedNote?.content ?? "");
-  }, [selectedNoteId, selectedNote?.content]);
-
-  const filtered = useMemo(() => {
-    return notes.filter((n) => {
-      if (activeTab === "starred" && !n.starred) return false;
-      if (filterUav && String(n.uav_id) !== filterUav) return false;
-      if (search && !n.title.toLowerCase().includes(search.toLowerCase()) && !n.content.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    });
-  }, [notes, activeTab, filterUav, search]);
-
-  function uavName(id) {
-    return uavs.find((u) => u.id === id)?.name ?? null;
-  }
-  function missionName(id) {
-    return missions.find((m) => m.id === id)?.name ?? null;
-  }
-
-  async function toggleStar(e, note) {
-    e.stopPropagation();
-    await patchNote(note.id, { starred: !note.starred });
-    reload();
-  }
-
-  async function createNewNote() {
-    if (!newTitle.trim()) return;
-    const created = await createNote({
-      title: newTitle.trim(),
-      content: "",
-      tags: [],
-      uav_id: newUavId ? Number(newUavId) : null,
-      mission_id: newMissionId ? Number(newMissionId) : null,
-    });
-    setNewTitle(""); setNewUavId(""); setNewMissionId(""); setShowNewForm(false);
-    await reload();
-    if (created?.id) setSelectedNoteId(created.id);
-  }
-
-  async function saveContent() {
-    if (!selectedNote) return;
-    await patchNote(selectedNote.id, { content: draftContent });
-    reload();
-  }
-
-  function wrapSelection(before, after) {
-    const el = document.getElementById("note-content-textarea");
-    if (!el) return;
-    const { selectionStart: s, selectionEnd: e } = el;
-    const next = draftContent.slice(0, s) + before + draftContent.slice(s, e) + after + draftContent.slice(e);
-    setDraftContent(next);
-  }
-
-  async function removeTag(tag) {
-    if (!selectedNote) return;
-    await patchNote(selectedNote.id, { tags: selectedNote.tags.filter((t) => t !== tag) });
-    reload();
-  }
-
-  async function addTag(e) {
+  const handleAddTag = (e) => {
     e.preventDefault();
-    if (!selectedNote || !newTagInput.trim()) return;
-    if (selectedNote.tags.includes(newTagInput.trim())) return;
-    await patchNote(selectedNote.id, { tags: [...selectedNote.tags, newTagInput.trim()] });
-    setNewTagInput(""); setShowAddTagInput(false);
-    reload();
-  }
+    if (newTagText.trim() && !tags.includes(newTagText.trim())) {
+      setTags([...tags, newTagText.trim()]);
+      setNewTagText("");
+      setShowAddTag(false);
+    }
+  };
 
-  async function saveQuickNote() {
-    if (!quickNoteText.trim()) return;
-    await createNote({ title: `Ghi chú nhanh ${new Date().toLocaleTimeString("vi-VN")}`, content: quickNoteText.trim(), tags: ["ghi-chu-nhanh"] });
-    setQuickNoteText("");
-    reload();
-  }
-
-  async function removeNote(id) {
-    await deleteNote(id);
-    if (selectedNoteId === id) setSelectedNoteId(null);
-    reload();
-  }
+  const handleRemoveTag = (t) => {
+    setTags(tags.filter((item) => item !== t));
+  };
 
   return (
-    <div className="notes-page-layout">
+    <div className="notes-page-layout-v2">
+      {/* Sub Header */}
       <div className="live-sub-header">
         <div className="header-left">
           <div className="uav-selector-wrapper">
-            <FileText size={18} color="#4ade80" />
             <span className="sub-title-label">GHI CHÉP</span>
-            <span className="dot-divider">/</span>
+            <span className="dot-divider">•</span>
             <span className="breadcrumb-sub">Trang chủ &gt; Ghi chép</span>
           </div>
         </div>
         <div className="header-right-telemetry">
-          <div className="telemetry-pill"><Crosshair size={14} color="#4ade80" /><span>GPS <strong>12</strong></span></div>
-          <div className="telemetry-pill green"><Wifi size={14} /><span>Liên kết <strong>Strong</strong></span></div>
-          <div className="telemetry-pill green"><Battery size={14} /><span>Pin <strong>78%</strong></span></div>
-          <div className="telemetry-pill clock-pill"><span>{currentTime || "-"}</span></div>
+          <div className="telemetry-pill">
+            <Crosshair size={14} color="#4ade80" />
+            <span>
+              GPS <strong>12</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill green">
+            <Wifi size={14} />
+            <span>
+              Liên kết <strong>Strong</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill green">
+            <Battery size={14} />
+            <span>
+              Pin <strong>78%</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill clock-pill">{currentTime}</div>
           <div className="user-profile-badge">
-            <div className="avatar"><User size={16} color="#e6e8ec" /></div>
-            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
+            <div className="avatar">
+              <User size={16} color="#e6e8ec" />
+            </div>
+            <div className="user-info">
+              <span className="username">admin</span>
+              <span className="user-role">Quản trị viên</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="notes-top-bar">
-        <div className="category-tabs">
-          <button className={`cat-tab ${activeTab === "all" ? "active" : ""}`} onClick={() => setActiveTab("all")}>Tất cả ghi chép</button>
-          <button className={`cat-tab ${activeTab === "starred" ? "active" : ""}`} onClick={() => setActiveTab("starred")}>Gắn dấu sao</button>
+      {/* Top Tabs & Action Button Bar */}
+      <div className="notes-top-tabs-bar">
+        <div className="tabs-group">
+          <button
+            className={`tab-btn ${activeTab === "all" ? "active" : ""}`}
+            onClick={() => setActiveTab("all")}
+          >
+            Tất cả ghi chép
+          </button>
+          <button
+            className={`tab-btn ${activeTab === "quick" ? "active" : ""}`}
+            onClick={() => setActiveTab("quick")}
+          >
+            Ghi chú nhanh
+          </button>
+          <button
+            className={`tab-btn ${activeTab === "mine" ? "active" : ""}`}
+            onClick={() => setActiveTab("mine")}
+          >
+            Ghi chép của tôi
+          </button>
+          <button
+            className={`tab-btn ${activeTab === "starred" ? "active" : ""}`}
+            onClick={() => setActiveTab("starred")}
+          >
+            Gắn dấu sao
+          </button>
         </div>
-        <button className="btn-create-note" onClick={() => setShowNewForm((v) => !v)}>
-          <span className="plus-icon">+</span> Tạo ghi chép mới
+        <button className="btn-create-note-green">
+          <Plus size={16} /> Tạo ghi chép mới
         </button>
       </div>
 
-      {showNewForm && (
-        <div className="notes-filter-bar">
-          <input className="search-input-box" style={{ flex: 2 }} placeholder="Tiêu đề ghi chép..." value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
-          <select className="filter-select" value={newUavId} onChange={(e) => setNewUavId(e.target.value)}>
-            <option value="">Không gắn UAV</option>
-            {uavs.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <select className="filter-select" value={newMissionId} onChange={(e) => setNewMissionId(e.target.value)}>
-            <option value="">Không gắn nhiệm vụ</option>
-            {missions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-          <button className="btn-create-note" onClick={createNewNote} disabled={!newTitle.trim()}>Tạo</button>
+      {/* Search & Multi-Filter Bar */}
+      <div className="notes-filters-row">
+        <div className="search-box-wrap">
+          <Search size={14} className="search-ic" />
+          <input
+            type="text"
+            placeholder="Tìm kiếm ghi chép..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-      )}
-
-      <div className="notes-filter-bar">
-        <div className="search-input-box">
-          <span className="search-icon"><Search size={14} /></span>
-          <input type="text" placeholder="Tìm kiếm ghi chép..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select className="filter-select-sm"><option>Tất cả loại</option></select>
+        <select className="filter-select-sm"><option>Tất cả UAV</option></select>
+        <select className="filter-select-sm"><option>Tất cả nhiệm vụ</option></select>
+        <select className="filter-select-sm"><option>Tất cả mức độ</option></select>
+        <div className="date-range-pill">
+          <span>13/04/2024 - 13/05/2024</span>
+          <Calendar size={12} />
         </div>
-        <select className="filter-select" value={filterUav} onChange={(e) => setFilterUav(e.target.value)}>
-          <option value="">Tất cả UAV</option>
-          {uavs.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
       </div>
 
-      <div className="notes-main-grid">
-        {/* Left Column */}
-        <div className="notes-list-column">
-          <div className="column-header-row">
-            <span className="column-title">DANH SÁCH GHI CHÉP ({filtered.length})</span>
+      {/* Main 3 Column Split Layout */}
+      <div className="notes-main-3col-v2">
+        {/* Column 1: DANH SÁCH GHI CHÉP */}
+        <div className="dashboard-panel notes-left-column">
+          <div className="panel-section-header">
+            <h3 className="section-title">DANH SÁCH GHI CHÉP (32)</h3>
+            <span className="sort-sub-text">Sắp xếp: Mới nhất ▾</span>
           </div>
-
-          <div className="notes-card-scroll">
-            {filtered.length === 0 && <p className="muted" style={{ padding: "10px" }}>Chưa có ghi chép nào.</p>}
-            {filtered.map((n) => (
-              <div key={n.id} className={`note-list-card ${n.id === selectedNoteId ? "active" : ""}`} onClick={() => setSelectedNoteId(n.id)}>
-                <div className="card-top-row">
-                  <span className="note-type-icon"><FileText size={16} /></span>
-                  <div className="note-card-title">{n.title}</div>
-                  <span className="note-card-time">{new Date(n.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span>
-                </div>
-                <div className="card-bottom-row">
-                  <div className="card-tags">
-                    {uavName(n.uav_id) && <span className="tag-pill"><Plane size={12} /> {uavName(n.uav_id)}</span>}
-                    {missionName(n.mission_id) && <span className="tag-pill"><ClipboardList size={12} /> {missionName(n.mission_id)}</span>}
+          <div className="notes-list-items-stack">
+            {notesList.map((n) => {
+              const IconComp = n.icon;
+              const isSelected = n.id === selectedNoteId;
+              return (
+                <div
+                  key={n.id}
+                  className={`note-item-card ${isSelected ? "selected" : ""}`}
+                  onClick={() => setSelectedNoteId(n.id)}
+                >
+                  <div className="icon-box">
+                    <IconComp size={16} color={isSelected ? "#22c55e" : n.iconColor} />
                   </div>
-                  <button className={`star-btn ${n.starred ? "starred" : ""}`} onClick={(e) => toggleStar(e, n)} title={n.starred ? "Bỏ đánh dấu sao" : "Đánh dấu sao"}>
-                    <Star size={14} fill={n.starred ? "#facc15" : "none"} color={n.starred ? "#facc15" : "currentColor"} />
-                  </button>
+                  <div className="note-card-info">
+                    <div className="card-top-header">
+                      <span className="title-text">{n.title}</span>
+                      <span className="time-text">{n.time}</span>
+                    </div>
+                    <div className="card-sub-meta">
+                      <span>🛸 {n.uav}</span>
+                      <span className="sep">•</span>
+                      <span>📋 Nhiệm vụ: {n.mission}</span>
+                    </div>
+                  </div>
+                  <div className="star-box">
+                    <Star
+                      size={14}
+                      fill={n.starred ? "#f59e0b" : "none"}
+                      color={n.starred ? "#f59e0b" : "#64748b"}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+
+          {/* Bottom Pagination */}
+          <div className="notes-pagination-bar">
+            <button className="page-btn">&lt;</button>
+            <button className="page-btn active">1</button>
+            <button className="page-btn">2</button>
+            <button className="page-btn">3</button>
+            <button className="page-btn">4</button>
+            <button className="page-btn">&gt;</button>
+            <button className="page-btn">&gt;&gt;</button>
           </div>
         </div>
 
-        {/* Middle Column: Detail + editor */}
-        <div className="note-detail-column">
-          {!selectedNote ? (
-            <p className="muted">Chọn một ghi chép ở danh sách bên trái, hoặc tạo ghi chép mới.</p>
-          ) : (
-            <>
-              <div className="detail-title-header">
-                <div className="title-left"><h2>{selectedNote.title}</h2></div>
-                <div className="title-right-actions">
-                  <button className={`star-btn-large ${selectedNote.starred ? "starred" : ""}`} onClick={(e) => toggleStar(e, selectedNote)}>
-                    <Star size={16} fill={selectedNote.starred ? "#facc15" : "none"} color={selectedNote.starred ? "#facc15" : "currentColor"} />
-                  </button>
-                  <button className="more-options-btn" title="Xoá ghi chép" onClick={() => removeNote(selectedNote.id)}><Trash2 size={16} /></button>
-                </div>
-              </div>
+        {/* Column 2: CENTER NOTE DETAIL & RICH EDITOR */}
+        <div className="dashboard-panel notes-center-column">
+          {/* Note Detail Header */}
+          <div className="note-header-row">
+            <div className="title-edit-group">
+              <h2 className="main-note-title">Kiểm tra khu vực mục tiêu A</h2>
+              <button className="btn-ic-edit" title="Chỉnh sửa"><Edit2 size={14} /></button>
+            </div>
+            <div className="header-right-badges">
+              <span className="tag-badge-yellow">Quan trọng</span>
+              <button className="btn-star-yellow"><Star size={16} fill="#f59e0b" color="#f59e0b" /></button>
+              <button className="btn-more-dots"><MoreVertical size={16} /></button>
+            </div>
+          </div>
 
-              <div className="note-metadata-bar">
-                <span><Plane size={14} /> <strong>{uavName(selectedNote.uav_id) ?? "—"}</strong></span>
-                <span className="sep">•</span>
-                <span><ClipboardList size={14} /> <strong>{missionName(selectedNote.mission_id) ?? "—"}</strong></span>
-                <span className="sep">•</span>
-                <span><Clock size={14} /> <strong>{fmt(selectedNote.created_at)}</strong></span>
-                <span className="sep">•</span>
-                <span><User size={14} /> <strong>{selectedNote.author}</strong></span>
-              </div>
+          {/* Sub Metadata Bar */}
+          <div className="note-sub-meta-bar">
+            <span className="meta-pill-item"><Plane size={13} color="#22c55e" /> <strong>UAV_02 - Eagle Pro</strong></span>
+            <span className="sep">•</span>
+            <span className="meta-pill-item"><Calendar size={13} color="#94a3b8" /> <strong>NV_20240513_01</strong></span>
+            <span className="sep">•</span>
+            <span className="meta-pill-item"><Calendar size={13} color="#94a3b8" /> <strong>13/05/2024 18:35</strong></span>
+            <span className="sep">•</span>
+            <span className="meta-pill-item"><User size={13} color="#94a3b8" /> <strong>admin</strong></span>
+          </div>
 
-              <div className="rich-editor-toolbar">
-                <button className="tb-btn font-bold" title="In đậm" onClick={() => wrapSelection("**", "**")}><Bold size={14} /></button>
-                <button className="tb-btn font-italic" title="In nghiêng" onClick={() => wrapSelection("_", "_")}><Italic size={14} /></button>
-              </div>
+          {/* Rich Text Editor Formatting Toolbar */}
+          <div className="editor-toolbar-v2">
+            <button className="tb-ic-btn">B</button>
+            <button className="tb-ic-btn font-italic">I</button>
+            <button className="tb-ic-btn font-underline">U</button>
+            <button className="tb-ic-btn font-strike">S</button>
+            <div className="tb-divider" />
+            <button className="tb-ic-btn"><List size={14} /></button>
+            <button className="tb-ic-btn"><ListOrdered size={14} /></button>
+            <div className="tb-divider" />
+            <button className="tb-ic-btn"><Link2 size={14} /></button>
+            <button className="tb-ic-btn"><ImageIcon size={14} /></button>
+            <button className="tb-ic-btn"><Table size={14} /></button>
+            <button className="tb-ic-btn"><Code size={14} /></button>
+            <div className="tb-divider" />
+            <button className="tb-ic-btn"><Undo size={14} /></button>
+            <button className="tb-ic-btn"><Redo size={14} /></button>
+          </div>
 
-              <textarea
-                id="note-content-textarea"
-                className="sf-textarea"
-                style={{ width: "100%", minHeight: "180px", marginBottom: "8px" }}
-                placeholder="Nội dung ghi chép..."
-                value={draftContent}
-                onChange={(e) => setDraftContent(e.target.value)}
-              />
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
-                <button className="btn-save-quick-note" onClick={saveContent} disabled={draftContent === selectedNote.content}>Lưu nội dung</button>
-              </div>
+          {/* Note Body Text Content */}
+          <div className="note-markdown-body">
+            <h4 className="body-heading">Nội dung ghi chép</h4>
+            <p className="body-paragraph">Tiến hành kiểm tra chi tiết khu vực mục tiêu A theo kế hoạch.</p>
+            <ul className="body-bullet-list">
+              <li>Khu vực tổng quan ổn định, không phát hiện dấu hiệu bất thường.</li>
+              <li>Một số hoạt động của người dân tại khu vực phía Đông.</li>
+              <li>Phương tiện di chuyển chủ yếu là xe máy và xe tải nhỏ.</li>
+              <li>Điều kiện thời tiết: Nhiều mây, tầm nhìn tốt.</li>
+              <li>GPS ổn định, tín hiệu mạnh trong suốt quá trình bay.</li>
+            </ul>
 
-              <div className="tags-management-box">
-                <span className="tags-label">Thẻ (Tag)</span>
-                <div className="tags-chips-list">
-                  {selectedNote.tags.map((tag) => (
-                    <span key={tag} className="tag-chip">{tag}<button className="remove-tag-btn" onClick={() => removeTag(tag)}><X size={12} /></button></span>
-                  ))}
-                  {showAddTagInput ? (
-                    <form onSubmit={addTag} className="add-tag-inline-form">
-                      <input type="text" placeholder="Nhập tên thẻ..." value={newTagInput} onChange={(e) => setNewTagInput(e.target.value)} autoFocus />
-                      <button type="submit" className="confirm-tag-btn">Thêm</button>
-                    </form>
-                  ) : (
-                    <button className="btn-add-tag" onClick={() => setShowAddTagInput(true)}>+ Thêm thẻ</button>
-                  )}
-                </div>
-              </div>
+            <h4 className="body-heading">Đề xuất:</h4>
+            <ul className="body-bullet-list">
+              <li>Tiếp tục theo dõi khu vực này trong 24 giờ tới.</li>
+              <li>Tăng tần suất bay vào khung giờ 18:00 - 22:00.</li>
+              <li>Phối hợp với lực lượng mặt đất để xác minh thông tin.</li>
+            </ul>
+          </div>
 
-              <div className="quick-note-box">
-                <span className="quick-note-title">Ghi chú nhanh (tạo ghi chép mới)</span>
-                <div className="quick-note-input-row">
-                  <textarea placeholder="Thêm ghi chú nhanh..." value={quickNoteText} onChange={(e) => setQuickNoteText(e.target.value)} rows="2" />
-                  <button className="btn-save-quick-note" onClick={saveQuickNote}>Lưu ghi chú nhanh</button>
-                </div>
+          {/* Embedded Content Image Grid */}
+          <div className="note-images-grid-section">
+            <h4 className="section-sub-label">Hình ảnh đính kèm trong nội dung</h4>
+            <div className="images-thumb-row">
+              <div className="img-thumb-card active">
+                <img src="https://images.unsplash.com/photo-1508614589041-895b88991e3e?w=300&q=80" alt="aerial target A" />
               </div>
-            </>
-          )}
+              <div className="img-thumb-card">
+                <img src="https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=300&q=80" alt="river landscape" />
+              </div>
+              <div className="img-thumb-card">
+                <img src="https://images.unsplash.com/photo-1519681393784-d120267933ba?w=300&q=80" alt="aerial mountain" />
+              </div>
+              <div className="img-thumb-card overlay">
+                <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=300&q=80" alt="dark aerial" />
+                <div className="overlay-text">+3</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Tags Section */}
+          <div className="note-tags-section">
+            <span className="tags-lbl">Thẻ (Tag)</span>
+            <div className="tags-chips-flex">
+              {tags.map((t) => (
+                <span key={t} className="tag-chip-v2">
+                  {t} <button className="btn-del-tag" onClick={() => handleRemoveTag(t)}>✕</button>
+                </span>
+              ))}
+
+              {showAddTag ? (
+                <form onSubmit={handleAddTag} className="add-tag-inline-form">
+                  <input
+                    type="text"
+                    placeholder="Tên thẻ..."
+                    value={newTagText}
+                    onChange={(e) => setNewTagText(e.target.value)}
+                    autoFocus
+                  />
+                  <button type="submit" className="btn-confirm-tag">Thêm</button>
+                </form>
+              ) : (
+                <button className="btn-add-tag-v2" onClick={() => setShowAddTag(true)}>+ Thêm thẻ</button>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Note Textarea Box */}
+          <div className="quick-note-section">
+            <span className="quick-lbl">Ghi chú nhanh</span>
+            <textarea
+              className="quick-textarea"
+              placeholder="Thêm ghi chú nhanh..."
+              value={quickNote}
+              onChange={(e) => setQuickNote(e.target.value)}
+            />
+            <button className="btn-save-quick">Lưu ghi chú nhanh</button>
+          </div>
         </div>
 
-        {/* Right Column: real metadata only */}
-        <div className="notes-info-column">
-          <div className="side-meta-card">
-            <span className="side-card-title">THÔNG TIN GHI CHÉP</span>
-            {selectedNote ? (
-              <div className="meta-info-list">
-                <div className="meta-item"><span className="lbl">Trạng thái</span><span className="status-text green">● {selectedNote.starred ? "Đánh dấu sao" : "Bình thường"}</span></div>
-                <div className="meta-item"><span className="lbl">Người tạo</span><span className="val font-mono">{selectedNote.author}</span></div>
-                <div className="meta-item"><span className="lbl">Thời gian tạo</span><span className="val font-mono">{fmt(selectedNote.created_at)}</span></div>
-                <div className="meta-item"><span className="lbl">Cập nhật lần cuối</span><span className="val font-mono">{fmt(selectedNote.updated_at)}</span></div>
+        {/* Column 3: RIGHT SIDEBAR METADATA & ATTACHMENTS */}
+        <div className="notes-right-column">
+          {/* Card 1: THÔNG TIN GHI CHÉP */}
+          <div className="dashboard-panel right-meta-card">
+            <div className="panel-section-header">
+              <h3 className="section-title">THÔNG TIN GHI CHÉP</h3>
+            </div>
+            <div className="side-kv-list">
+              <div className="kv-row">
+                <span className="lbl">Loại ghi chép</span>
+                <span className="val green-text font-bold">Ghi chép nhiệm vụ</span>
               </div>
-            ) : (
-              <p className="muted">Chưa chọn ghi chép.</p>
-            )}
+              <div className="kv-row">
+                <span className="lbl">Mức độ</span>
+                <span className="badge-tag yellow">Quan trọng</span>
+              </div>
+              <div className="kv-row">
+                <span className="lbl">Trạng thái</span>
+                <span className="val green-text font-bold">● Hoàn thành</span>
+              </div>
+              <div className="kv-row">
+                <span className="lbl">Người tạo</span>
+                <span className="val font-mono">admin</span>
+              </div>
+              <div className="kv-row">
+                <span className="lbl">Thời gian tạo</span>
+                <span className="val font-mono">13/05/2024 18:35</span>
+              </div>
+              <div className="kv-row">
+                <span className="lbl">Cập nhật lần cuối</span>
+                <span className="val font-mono">13/05/2024 18:37</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: TỆP ĐÌNH KÈM (5) */}
+          <div className="dashboard-panel right-attachments-card">
+            <div className="panel-section-header">
+              <h3 className="section-title">TỆP ĐÌNH KÈM (5)</h3>
+            </div>
+            <div className="attach-files-list">
+              <div className="file-item-row">
+                <ImageIcon size={14} className="ic-file" />
+                <div className="file-name-size">
+                  <span className="name">anh_khu_vuc_A_01.jpg</span>
+                  <span className="size">2.4 MB</span>
+                </div>
+                <button className="btn-download"><Download size={13} /></button>
+              </div>
+
+              <div className="file-item-row">
+                <ImageIcon size={14} className="ic-file" />
+                <div className="file-name-size">
+                  <span className="name">anh_khu_vuc_A_02.jpg</span>
+                  <span className="size">3.1 MB</span>
+                </div>
+                <button className="btn-download"><Download size={13} /></button>
+              </div>
+
+              <div className="file-item-row">
+                <span className="ic-file">🎥</span>
+                <div className="file-name-size">
+                  <span className="name">video_khu_vuc_A.mp4</span>
+                  <span className="size">45.2 MB</span>
+                </div>
+                <button className="btn-download"><Download size={13} /></button>
+              </div>
+
+              <div className="file-item-row">
+                <span className="ic-file red">📕</span>
+                <div className="file-name-size">
+                  <span className="name">bao_cao_so_bo.pdf</span>
+                  <span className="size">1.2 MB</span>
+                </div>
+                <button className="btn-download"><Download size={13} /></button>
+              </div>
+
+              <div className="file-item-row">
+                <FileText size={14} className="ic-file" />
+                <div className="file-name-size">
+                  <span className="name">log_bay_UAV_02.txt</span>
+                  <span className="size">0.8 MB</span>
+                </div>
+                <button className="btn-download"><Download size={13} /></button>
+              </div>
+            </div>
+            <button className="btn-download-all"><Download size={13} /> Tải tất cả</button>
+          </div>
+
+          {/* Card 3: HOẠT ĐỘNG LIÊN QUAN */}
+          <div className="dashboard-panel right-activity-card">
+            <div className="panel-section-header">
+              <h3 className="section-title">HOẠT ĐỘNG LIÊN QUAN</h3>
+            </div>
+            <div className="activity-timeline-list">
+              <div className="act-item-row">
+                <span className="act-dot green">●</span>
+                <span className="act-time font-mono">18:35</span>
+                <div className="act-meta">
+                  <span className="title">Tạo ghi chép</span>
+                  <span className="author">admin</span>
+                </div>
+                <button className="btn-dl-act"><Download size={11} /></button>
+              </div>
+
+              <div className="act-item-row">
+                <span className="act-dot green">●</span>
+                <span className="act-time font-mono">18:37</span>
+                <div className="act-meta">
+                  <span className="title">Cập nhật ghi chép</span>
+                  <span className="author">admin</span>
+                </div>
+                <button className="btn-dl-act"><Download size={11} /></button>
+              </div>
+
+              <div className="act-item-row">
+                <span className="act-dot green">●</span>
+                <span className="act-time font-mono">18:40</span>
+                <div className="act-meta">
+                  <span className="title">Đính kèm tệp mới</span>
+                  <span className="author">admin</span>
+                </div>
+                <button className="btn-dl-act"><Download size={11} /></button>
+              </div>
+            </div>
+            <a href="#history" className="history-link-footer">Xem tất cả lịch sử &gt;</a>
           </div>
         </div>
       </div>
