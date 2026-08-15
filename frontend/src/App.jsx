@@ -37,6 +37,7 @@ import Analytics from "./pages/Analytics";
 import NotesView from "./pages/NotesView";
 import AlertsView from "./pages/AlertsView";
 import ReportsView from "./pages/ReportsView";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const TABS = [
   { key: "overview", label: "Tổng quan", Icon: LayoutGrid },
@@ -189,17 +190,19 @@ export default function App() {
 
         {/* CONTENT VIEW AREA */}
         <main className="content">
-          {tab === "overview" && <Overview payload={payload} onNavigateTab={setTab} />}
-          {tab === "uavs" && <UAVList activeUavId={payload?.active_uav_id} payload={payload} onOpenAlerts={() => setTab("logs")} />}
-          {tab === "missions" && <Missions payload={payload} />}
-          {tab === "tracking" && <Targets payload={payload} />}
-          {tab === "live" && <LiveMonitoring payload={payload} />}
-          {tab === "map" && <MapView payload={payload} />}
-          {tab === "analytics" && <Analytics payload={payload} />}
-          {tab === "notes" && <NotesView />}
-          {tab === "logs" && <AlertsView onOpenMap={() => setTab("map")} />}
-          {tab === "reports" && <ReportsView />}
-          {tab === "settings" && <SettingsPage />}
+          <ErrorBoundary key={tab}>
+            {tab === "overview" && <Overview payload={payload} onNavigateTab={setTab} />}
+            {tab === "uavs" && <UAVList activeUavId={payload?.active_uav_id} payload={payload} onOpenAlerts={() => setTab("logs")} />}
+            {tab === "missions" && <Missions payload={payload} />}
+            {tab === "tracking" && <Targets payload={payload} />}
+            {tab === "live" && <LiveMonitoring payload={payload} />}
+            {tab === "map" && <MapView payload={payload} />}
+            {tab === "analytics" && <Analytics payload={payload} />}
+            {tab === "notes" && <NotesView />}
+            {tab === "logs" && <AlertsView onOpenMap={() => setTab("map")} />}
+            {tab === "reports" && <ReportsView />}
+            {tab === "settings" && <SettingsPage />}
+          </ErrorBoundary>
         </main>
       </div>
     </div>

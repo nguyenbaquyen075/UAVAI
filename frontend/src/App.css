@@ -4170,5 +4170,1471 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .alert-item.yellow { border-left: 3px solid #facc15; }
 .alert-item.orange { border-left: 3px solid #f97316; }
 
+/* ==========================================================================
+   MISSIONS PAGE REDESIGN (V2) - MATCHES REFERENCE SCREENSHOT EXACTLY
+   ========================================================================== */
+
+.missions-page-v2 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px;
+  background: #0b0f19;
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+/* Header Bar */
+.dashboard-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.header-left-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-title-icon {
+  width: 40px;
+  height: 40px;
+  background: #162035;
+  border: 1px solid #232f48;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-main-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.breadcrumb-trail {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.header-right-badges {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-badge-item {
+  background: #131b2e;
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-badge-item.time-badge {
+  color: #94a3b8;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.user-profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #131b2e;
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+.avatar-circle {
+  width: 28px;
+  height: 28px;
+  background: #232f48;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+
+.user-role {
+  font-size: 10px;
+  color: #64748b;
+}
+
+/* 5 Top Stat Cards Grid */
+.stats-grid-5 {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.summary-stat-card {
+  background: #131b2e;
+  border: 1px solid #232f48;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.stat-icon-wrapper {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.icon-blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.icon-green { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.icon-emerald { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.icon-red { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.icon-purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.stat-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.stat-value-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.stat-number {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1;
+}
+
+.stat-trend {
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.trend-up {
+  color: #22c55e;
+}
+
+/* Main Grid Layout: Left Column & Right Sidebar */
+.missions-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+}
+
+.missions-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Table Panel */
+.dashboard-panel {
+  background: #131b2e;
+  border: 1px solid #232f48;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.panel-tabs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #1e293b;
+  margin-bottom: 14px;
+}
+
+.nav-tabs-list {
+  display: flex;
+  gap: 24px;
+}
+
+.tab-item {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+}
+
+.tab-item:hover {
+  color: #cbd5e1;
+}
+
+.tab-item.active {
+  color: #22c55e;
+  border-bottom-color: #22c55e;
+}
+
+.tab-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-create-mission {
+  background: #22c55e;
+  color: #0f172a;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  transition: background 0.2s ease;
+}
+
+.btn-create-mission:hover {
+  background: #16a34a;
+}
+
+.btn-options-dots {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+  border-radius: 6px;
+  padding: 7px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Filter Toolbar */
+.filter-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+  align-items: center;
+}
+
+.search-input-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+}
+
+.table-search-input {
+  width: 100%;
+  background: #0b0f19;
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 7px 12px 7px 32px;
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.table-search-input:focus {
+  outline: none;
+  border-color: #22c55e;
+}
+
+.filter-select {
+  background: #0b0f19;
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.btn-filter-icon {
+  background: #1e293b;
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 7px 12px;
+  color: #cbd5e1;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* Mission Table */
+.missions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.missions-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1e293b;
+}
+
+.missions-table td {
+  padding: 12px;
+  border-bottom: 1px solid #1a2234;
+  color: #cbd5e1;
+  vertical-align: middle;
+}
+
+.table-row {
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+
+.table-row:hover {
+  background: #162035;
+}
+
+.selected-row {
+  background: #1a2744 !important;
+  border-left: 3px solid #22c55e;
+}
+
+.cell-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.cell-name {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.cell-targets {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.cell-uav {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.badge-pill {
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-active {
+  background: rgba(6, 78, 59, 0.6);
+  color: #4ade80;
+  border: 1px solid #059669;
+}
+
+.badge-warning {
+  background: rgba(120, 53, 15, 0.6);
+  color: #fde047;
+  border: 1px solid #d97706;
+}
+
+.badge-failed {
+  background: rgba(127, 29, 29, 0.6);
+  color: #f87171;
+  border: 1px solid #dc2626;
+}
+
+.badge-neutral {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.priority-text {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.priority-high { color: #ef4444; }
+.priority-medium { color: #f59e0b; }
+.priority-low { color: #3b82f6; }
+
+.progress-cell-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progress-bar-track {
+  flex: 1;
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.progress-pct-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f8fafc;
+  width: 34px;
+}
+
+.action-buttons-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.action-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.action-btn:hover {
+  color: #22c55e;
+}
+
+/* Pagination Footer */
+.table-pagination-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #1e293b;
+}
+
+.pagination-info {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.pagination-pages {
+  display: flex;
+  gap: 4px;
+}
+
+.page-num-btn, .page-nav-btn {
+  background: #0b0f19;
+  border: 1px solid #232f48;
+  color: #94a3b8;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.page-num-btn.active {
+  background: #22c55e;
+  color: #0f172a;
+  font-weight: 700;
+  border-color: #22c55e;
+}
+
+/* Lower 2-column Grid */
+.missions-lower-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.lower-panel {
+  display: flex;
+  flex-direction: column;
+  height: 420px;
+}
+
+.panel-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.icon-tool-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.icon-tool-btn:hover { color: #f8fafc; }
+
+/* Panel Map Container */
+.panel-map-container {
+  position: relative;
+  flex: 1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.leaflet-map-element {
+  width: 100%;
+  height: 100%;
+}
+
+.map-bottom-legend {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 6px 12px;
+  display: flex;
+  justify-content: space-around;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+.dot-uav { background: #38bdf8; }
+.dot-waypoint { background: #22c55e; }
+.square-target { width: 8px; height: 8px; background: #ef4444; border-radius: 1px; }
+.zone-area { width: 10px; height: 8px; background: rgba(34, 197, 94, 0.2); border: 1px solid #22c55e; }
+
+/* Panel Video Stream */
+.panel-video-container {
+  position: relative;
+  flex: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+
+.live-stream-hud-overlay {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.stream-header-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.uav-live-select {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid #232f48;
+  color: #fff;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-live-dot {
+  background: rgba(6, 78, 59, 0.8);
+  color: #4ade80;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.stream-rec-time {
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.rec-dot {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.stream-toolbar-right {
+  position: absolute;
+  top: 45px;
+  right: 8px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stream-tool-btn {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.stream-zoom-btn {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  color: #4ade80;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.stream-bottom-telemetry {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 10;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 6px 16px;
+  display: flex;
+  justify-content: space-around;
+  font-size: 11px;
+  color: #fff;
+}
+
+.telem-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.telem-label {
+  color: #64748b;
+  font-weight: 700;
+  font-size: 10px;
+}
+
+.telem-val {
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Right Sidebar Cards */
+.missions-right-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sidebar-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #1e293b;
+  margin-bottom: 12px;
+}
+
+.sidebar-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.mission-details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.detail-row.multiline {
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.detail-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.detail-value {
+  color: #cbd5e1;
+  text-align: right;
+}
+
+.sidebar-action-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.btn-sidebar-action {
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.btn-green {
+  background: #22c55e;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.btn-dark {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+}
+
+.btn-danger {
+  background: rgba(127, 29, 29, 0.8);
+  color: #f87171;
+  border: 1px solid #dc2626;
+  grid-column: span 2;
+}
+
+/* UAV Status Box */
+.uav-status-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.uav-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 10px;
+}
+
+.uav-image-preview {
+  width: 100%;
+  height: 110px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: #0b0f19;
+  border: 1px solid #1e293b;
+}
+
+.drone-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.uav-metrics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.metric-label { color: #64748b; }
+.metric-val { color: #f8fafc; font-weight: 600; }
+
+.metric-value-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.battery-bar {
+  width: 70px;
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.battery-fill {
+  height: 100%;
+  background: #22c55e;
+  border-radius: 3px;
+}
+
+.battery-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: #22c55e;
+}
+
+.btn-uav-detail-outline {
+  width: 100%;
+  background: transparent;
+  border: 1px solid #3b82f6;
+  color: #3b82f6;
+  border-radius: 6px;
+  padding: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+/* Progress Ring Card Body */
+.progress-ring-card-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.progress-gauge-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-breakdown {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.breakdown-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.breakdown-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.breakdown-val {
+  font-size: 12px;
+  color: #f8fafc;
+}
+
+/* Timeline Full Panel */
+.timeline-full-panel {
+  margin-top: 4px;
+}
+
+.timeline-horizontal-scroll {
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow-x: auto;
+  padding: 10px 0;
+}
+
+.timeline-track {
+  display: flex;
+  align-items: flex-start;
+  gap: 36px;
+  padding-left: 10px;
+}
+
+.timeline-step-node {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  position: relative;
+  min-width: 130px;
+}
+
+.timeline-step-node::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 18px;
+  width: calc(100% + 28px);
+  height: 2px;
+  background: #1e293b;
+  z-index: 1;
+}
+
+.timeline-step-node:last-child::after {
+  display: none;
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #131b2e;
+  z-index: 2;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.dot-blue { background: #3b82f6; box-shadow: 0 0 6px rgba(59, 130, 246, 0.5); }
+.dot-green { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
+.dot-red { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
+
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+
+.timeline-time-text {
+  font-size: 11px;
+  color: #64748b;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.timeline-title-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f8fafc;
+  margin-top: 2px;
+}
+
+.timeline-sub-text {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.timeline-scroll-next {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: -4px 0 8px rgba(0, 0, 0, 0.5);
+}
+
+/* Custom Waypoint Marker on Leaflet */
+.custom-waypoint-marker .wp-circle {
+  width: 20px;
+  height: 20px;
+  background: #22c55e;
+  color: #0f172a;
+  font-weight: 800;
+  font-size: 11px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+  border: 2px solid #ffffff;
+}
+
+.custom-target-marker .target-square {
+  width: 18px;
+  height: 18px;
+  background: #ef4444;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+/* Custom Drone Marker animation */
+.drone-map-marker .uav-marker-pulse {
+  animation: pulse-ring 2s infinite;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+/* Map Left Vertical Toolbar Overlay (5 Individual Square Buttons) */
+.map-left-toolbar-individual {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.map-single-btn {
+  width: 36px;
+  height: 36px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all 0.15s ease;
+}
+
+.map-single-btn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.map-top-right-expand {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid #232f48;
+  color: #cbd5e1;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.map-top-right-expand:hover {
+  color: #22c55e;
+}
+
+/* Stream Live Feed Image */
+.live-feed-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Top Left Tag Overlay Pill */
+.uav-live-pill-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.live-green-diamond {
+  color: #22c55e;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Top Right Meta Group */
+.top-right-meta-group {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-pill-box {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 5px 12px;
+  color: #f8fafc;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.rec-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #f8fafc;
+}
+
+.red-circle-dot {
+  width: 8px;
+  height: 8px;
+  background: #ef4444;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+/* Active Target Lock Green Button */
+.stream-tool-btn.active-lock-green {
+  color: #22c55e !important;
+  border-color: #22c55e !important;
+  background: rgba(34, 197, 94, 0.2) !important;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.5) !important;
+}
+
+/* Bottom Telemetry HUD Bar Overlay */
+.stream-bottom-telemetry-hud {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 20;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid #232f48;
+  border-radius: 6px;
+  padding: 8px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.telem-hud-col {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.telem-hud-col .lbl {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.telem-hud-col .val {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.telem-hud-col .val.val-emerald {
+  color: #22c55e !important;
+}
+
+/* Right Action Toolbar Grouped Boxes (Matches Screenshot) */
+.stream-toolbar-right-grouped {
+  position: absolute;
+  top: 48px;
+  right: 10px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolbar-group-box {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.group-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.group-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.group-btn.active-green {
+  color: #22c55e !important;
+}
+
+.group-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  width: 80%;
+  margin: 0 auto;
+}
+
+.zoom-text-btn {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #ffffff;
+}
+
+
+.telem-hud-col .val {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.hud-v-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 4px;
+}
+
+/* Card 2: TRẠNG THÁI UAV Styles */
+.uav-subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: -6px;
+  margin-bottom: 12px;
+}
+
+.uav-status-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.uav-drone-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.drone-3d-img {
+  width: 100%;
+  max-width: 130px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.6));
+}
+
+.uav-metrics-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.uav-metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.uav-metric-row .m-lbl {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.uav-metric-row .m-val {
+  color: #f8fafc;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.m-val-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.battery-mini-track {
+  width: 48px;
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.battery-mini-fill {
+  height: 100%;
+  background: #22c55e;
+  border-radius: 3px;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+}
+
+.val-green-signal {
+  color: #22c55e !important;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-uav-detail-green-outline {
+  width: 100%;
+  padding: 8px 0;
+  background: transparent;
+  border: 1px solid #22c55e;
+  border-radius: 6px;
+  color: #22c55e;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: 4px;
+}
+
+.btn-uav-detail-green-outline:hover {
+  background: rgba(34, 197, 94, 0.15);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.3);
+}
+
+.badge-green-glow {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+
+
+
+
 
 

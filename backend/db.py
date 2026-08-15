@@ -44,6 +44,7 @@ def init_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS missions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL DEFAULT '',
             name TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             uav_id INTEGER NOT NULL,
@@ -51,6 +52,9 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'active',
             priority TEXT NOT NULL DEFAULT 'medium',
             notes TEXT NOT NULL DEFAULT '',
+            target_count INTEGER DEFAULT 0,
+            area_size TEXT DEFAULT '',
+            creator TEXT DEFAULT 'admin',
             started_at TEXT NOT NULL,
             expected_end_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -115,6 +119,39 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+    # Migration checks for columns
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(missions)").fetchall()]
+    if "code" not in cols:
+        conn.execute("ALTER TABLE missions ADD COLUMN code TEXT DEFAULT ''")
+    if "target_count" not in cols:
+        conn.execute("ALTER TABLE missions ADD COLUMN target_count INTEGER DEFAULT 0")
+    if "area_size" not in cols:
+        conn.execute("ALTER TABLE missions ADD COLUMN area_size TEXT DEFAULT ''")
+    if "creator" not in cols:
+        conn.execute("ALTER TABLE missions ADD COLUMN creator TEXT DEFAULT 'admin'")
+
+    m_count = conn.execute("SELECT COUNT(*) FROM missions").fetchone()[0]
+    if m_count == 0:
+        now_ts = time.time()
+        def iso(ts):
+            return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+        seed_missions = [
+            ("MSN_20240513_001", "Tuần tra khu vực biên giới A", "Tuần tra và theo dõi các mục tiêu nghi vấn trong khu vực biên giới A", 2, json.dumps([{"lat": 21.028, "lon": 105.854}, {"lat": 21.031, "lon": 105.857}, {"lat": 21.033, "lon": 105.852}, {"lat": 21.030, "lon": 105.849}, {"lat": 21.026, "lon": 105.851}, {"lat": 21.025, "lon": 105.853}]), "active", "high", "", 6, "Khu vực A (12.5 km²)", "admin", iso(now_ts - 2700), iso(now_ts + 900), _now()),
+            ("MSN_20240513_002", "Giám sát khu công nghiệp", "Giám sát an ninh và rà soát khu vực kho xưởng", 1, json.dumps([{"lat": 21.025, "lon": 105.850}, {"lat": 21.028, "lon": 105.852}, {"lat": 21.027, "lon": 105.855}]), "active", "medium", "", 4, "Khu CN Biên Hòa (8.2 km²)", "admin", iso(now_ts - 1620), iso(now_ts + 1980), _now()),
+            ("MSN_20240512_008", "Tìm kiếm cứu nạn khu vực B", "Tìm kiếm và hỗ trợ nạn nhân vùng thiên tai", 3, json.dumps([{"lat": 21.032, "lon": 105.848}, {"lat": 21.035, "lon": 105.851}]), "completed", "high", "", 8, "Rừng Nam Cát Tiên (15.0 km²)", "admin", iso(now_ts - 86400), iso(now_ts - 81000), _now()),
+            ("MSN_20240512_007", "Kiểm tra đường ống dẫn dầu", "Kiểm tra sự cố rò rỉ nhiệt đường ống 01", 4, json.dumps([{"lat": 21.020, "lon": 105.840}, {"lat": 21.022, "lon": 105.845}]), "completed", "low", "", 5, "Tuyến đường ống 01 (20 km)", "admin", iso(now_ts - 95000), iso(now_ts - 90000), _now()),
+            ("MSN_20240511_006", "Giám sát cháy rừng", "Cảnh báo khói và nguy cơ ngọn lửa phát tán", 5, json.dumps([{"lat": 21.036, "lon": 105.860}, {"lat": 21.038, "lon": 105.863}]), "failed", "high", "", 3, "Khu bảo tồn C (10.0 km²)", "admin", iso(now_ts - 172800), iso(now_ts - 168000), _now()),
+            ("MSN_20240511_005", "Tuần tra ven biển", "Giám sát mật độ giao thông đường thủy ven bờ", 1, json.dumps([{"lat": 21.015, "lon": 105.860}, {"lat": 21.018, "lon": 105.865}]), "completed", "medium", "", 7, "Vùng biển A2 (30.0 km²)", "admin", iso(now_ts - 180000), iso(now_ts - 174000), _now()),
+        ]
+        for m in seed_missions:
+            conn.execute(
+                "INSERT INTO missions (code, name, description, uav_id, waypoints, status, priority, notes, target_count, area_size, creator, started_at, expected_end_at, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                m
+            )
+        # Set frozen_pct=30 for failed mission
+        conn.execute("UPDATE missions SET frozen_pct = 30 WHERE code = 'MSN_20240511_006'")
     conn.commit()
     conn.close()
 
