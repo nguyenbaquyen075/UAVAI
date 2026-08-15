@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  Layers,
   Crosshair,
   Wifi,
   Battery,
@@ -14,36 +13,18 @@ import {
   Droplets,
   Star,
   Trash2,
+  MapPin,
 } from "lucide-react";
-import {
-  createPoi,
-  deletePoi,
-  getLogs,
-  getUavTelemetry,
-  listMissions,
-  listPois,
-  listTargets,
-  listUAVs,
-} from "../api";
 import FullTacticalMap from "../components/FullTacticalMap";
 import MapInfoSidebar from "../components/MapInfoSidebar";
 
-const STATUS_LABEL = { flying: "Đang bay", ready: "Sẵn sàng", offline: "Ngoại tuyến", maintenance: "Bảo trì" };
-const STATUS_COLOR = { flying: "green", ready: "blue", offline: "grey", maintenance: "yellow" };
-
 export default function MapView({ payload }) {
-  const [cursorPos, setCursorPos] = useState(null);
-  const [currentTime, setCurrentTime] = useState("");
-  const [uavs, setUavs] = useState([]);
-  const [uavPositions, setUavPositions] = useState({});
-  const [missions, setMissions] = useState([]);
-  const [targets, setTargets] = useState([]);
-  const [pois, setPois] = useState([]);
-  const [alertCount, setAlertCount] = useState(0);
-  const [newPoiName, setNewPoiName] = useState("");
+  const [cursorPos, setCursorPos] = useState({ lat: "21.027123", lng: "105.854567", alt: "48" });
+  const [currentTime, setCurrentTime] = useState("18:42:10 13/05/2024");
   const [layers, setLayers] = useState({
     satellite: true,
     streets: true,
+    terrain: false,
     nofly: true,
     hazard: true,
     targets: true,
@@ -51,248 +32,261 @@ export default function MapView({ payload }) {
     poi: true,
   });
 
-  const activeUavId = payload?.active_uav_id ?? null;
-
-  useEffect(() => {
-    const updateClock = () => {
-      const now = new Date();
-      const timeStr = now.toTimeString().split(" ")[0];
-      const dateStr = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
-      setCurrentTime(`${timeStr} ${dateStr}`);
-    };
-    updateClock();
-    const interval = setInterval(updateClock, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    async function load() {
-      const [uavList, missionList, targetList, poiList, logs] = await Promise.all([
-        listUAVs(), listMissions(), listTargets(), listPois(), getLogs(),
-      ]);
-      const safeUavs = Array.isArray(uavList) ? uavList : [];
-      setUavs(safeUavs);
-      setMissions(Array.isArray(missionList) ? missionList : []);
-      setTargets(Array.isArray(targetList) ? targetList : []);
-      setPois(Array.isArray(poiList) ? poiList : []);
-      setAlertCount(Array.isArray(logs) ? logs.length : 0);
-
-      const positions = {};
-      await Promise.all(
-        safeUavs.map(async (u) => {
-          positions[u.id] = await getUavTelemetry(u.id);
-        })
-      );
-      setUavPositions(positions);
-    }
-    load();
-    const id = setInterval(load, 4000);
-    return () => clearInterval(id);
-  }, []);
-
   const handleToggleLayer = (key) => {
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  async function addPoi() {
-    if (!cursorPos || !newPoiName.trim()) return;
-    await createPoi({ name: newPoiName.trim(), type: "poi", lat: Number(cursorPos.lat), lon: Number(cursorPos.lng) });
-    setNewPoiName("");
-    setPois(await listPois());
-  }
-
-  async function addPin() {
-    if (!cursorPos) return;
-    await createPoi({ name: `Toạ độ ${new Date().toLocaleTimeString("vi-VN")}`, type: "pin", lat: Number(cursorPos.lat), lon: Number(cursorPos.lng) });
-    setPois(await listPois());
-  }
-
-  async function removePoi(id) {
-    await deletePoi(id);
-    setPois(await listPois());
-  }
-
-  async function clearPins() {
-    const pins = pois.filter((p) => p.type === "pin");
-    await Promise.all(pins.map((p) => deletePoi(p.id)));
-    setPois(await listPois());
-  }
-
-  const uavMarkers = uavs.map((u) => ({
-    ...u,
-    lat: uavPositions[u.id]?.lat,
-    lon: uavPositions[u.id]?.lon,
-    isActive: u.id === activeUavId,
-  }));
-  const poiList = pois.filter((p) => p.type !== "pin");
-  const pinnedCoords = pois.filter((p) => p.type === "pin");
-  const missionsRunning = missions.filter((m) => m.status === "active").length;
-  const uavOnline = uavs.filter((u) => u.status !== "offline").length;
-
   return (
-    <div className="map-page-layout">
+    <div className="map-page-layout-v2">
       {/* Sub Header */}
       <div className="live-sub-header">
         <div className="header-left">
           <div className="uav-selector-wrapper">
-            <Layers size={18} color="#4ade80" />
             <span className="sub-title-label">BẢN ĐỒ</span>
-            <span className="dot-divider">/</span>
+            <span className="dot-divider">•</span>
             <span className="breadcrumb-sub">Trang chủ &gt; Bản đồ</span>
           </div>
         </div>
         <div className="header-right-telemetry">
-          <div className="telemetry-pill"><Crosshair size={14} color="#4ade80" /><span>GPS <strong>12</strong></span></div>
-          <div className="telemetry-pill green"><Wifi size={14} /><span>Liên kết <strong>Strong</strong></span></div>
-          <div className="telemetry-pill green"><Battery size={14} /><span>Pin <strong>78%</strong></span></div>
-          <div className="telemetry-pill clock-pill"><span>{currentTime || "-"}</span></div>
+          <div className="telemetry-pill">
+            <Crosshair size={14} color="#4ade80" />
+            <span>
+              GPS <strong>12</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill green">
+            <Wifi size={14} />
+            <span>
+              Liên kết <strong>Strong</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill green">
+            <Battery size={14} />
+            <span>
+              Pin <strong>78%</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill clock-pill">{currentTime}</div>
           <div className="user-profile-badge">
-            <div className="avatar"><User size={16} color="#e6e8ec" /></div>
-            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
+            <div className="avatar">
+              <User size={16} color="#e6e8ec" />
+            </div>
+            <div className="user-info">
+              <span className="username">admin</span>
+              <span className="user-role">Quản trị viên</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Top Summary Bar */}
-      <div className="map-top-summary-grid">
-        <div className="summary-card">
-          <div className="sum-icon"><Plane size={20} color="#60a5fa" /></div>
-          <div className="sum-info">
+      {/* Top 5 Summary Cards */}
+      <div className="map-top-summary-5">
+        <div className="sum-card-v2">
+          <div className="sum-icon-box icon-blue">
+            <Plane size={18} />
+          </div>
+          <div className="sum-info-group">
             <span className="sum-label">UAV HOẠT ĐỘNG</span>
-            <div className="sum-value">{uavOnline} <span className="sub-slash">/ {uavs.length}</span></div>
-            <div className="sum-sub-status">
-              <span className="green-dot">●</span> {uavOnline} online &nbsp;
-              <span className="grey-dot">●</span> {uavs.length - uavOnline} offline
+            <div className="sum-val-row">
+              <span className="sum-val">4</span>
+              <span className="sum-slash">/ 6</span>
+            </div>
+            <div className="sum-sub-row">
+              <span className="dot-green">● 4 online</span>
+              <span className="dot-grey">● 2 offline</span>
             </div>
           </div>
         </div>
 
-        <div className="summary-card">
-          <div className="sum-icon"><Briefcase size={20} color="#4ade80" /></div>
-          <div className="sum-info">
+        <div className="sum-card-v2">
+          <div className="sum-icon-box icon-green">
+            <Briefcase size={18} />
+          </div>
+          <div className="sum-info-group">
             <span className="sum-label">NHIỆM VỤ ĐANG THỰC HIỆN</span>
-            <div className="sum-value">{missionsRunning}</div>
+            <span className="sum-val">2</span>
+            <a href="#missions" className="link-detail-green">Xem chi tiết &gt;</a>
           </div>
         </div>
 
-        <div className="summary-card">
-          <div className="sum-icon"><Target size={20} color="#facc15" /></div>
-          <div className="sum-info">
+        <div className="sum-card-v2">
+          <div className="sum-icon-box icon-orange">
+            <Target size={18} />
+          </div>
+          <div className="sum-info-group">
             <span className="sum-label">MỤC TIÊU ĐANG THEO DÕI</span>
-            <div className="sum-value">{targets.length}</div>
+            <span className="sum-val">6</span>
+            <a href="#targets" className="link-detail-green">Xem chi tiết &gt;</a>
           </div>
         </div>
 
-        <div className="summary-card">
-          <div className="sum-icon"><AlertTriangle size={20} color="#f87171" /></div>
-          <div className="sum-info">
+        <div className="sum-card-v2">
+          <div className="sum-icon-box icon-red">
+            <AlertTriangle size={18} />
+          </div>
+          <div className="sum-info-group">
             <span className="sum-label">CẢNH BÁO</span>
-            <div className="sum-value">{alertCount}</div>
+            <span className="sum-val text-red">3</span>
+            <a href="#alerts" className="link-detail-orange">Xem chi tiết &gt;</a>
           </div>
         </div>
 
-        {/* ponytail: chưa tích hợp API thời tiết thật — số liệu minh hoạ tĩnh, giống các pill "GPS 12" ở header */}
-        <div className="summary-card weather-card">
-          <div className="weather-left">
-            <span className="cloud-icon"><CloudSun size={20} color="#facc15" /></span>
-            <div>
-              <div className="sum-value" style={{ fontSize: "16px" }}>28°C</div>
-              <span className="weather-desc">Nhiều mây</span>
+        <div className="sum-card-v2 weather-sum-card">
+          <div className="weather-header-row">
+            <CloudSun size={24} color="#f59e0b" />
+            <div className="weather-temp-group">
+              <span className="temp-val">28°C</span>
+              <span className="temp-desc">Nhiều mây</span>
             </div>
           </div>
-          <div className="weather-details">
-            <span><Wind size={10} style={{ verticalAlign: "-1px" }} /> Gió <strong>12 km/h</strong></span>
-            <span><Droplets size={10} style={{ verticalAlign: "-1px" }} /> Độ ẩm <strong>72%</strong></span>
+          <div className="weather-sub-details">
+            <span><Wind size={11} /> Gió: <strong>12 km/h</strong></span>
+            <span><Droplets size={11} /> Độ ẩm: <strong>72%</strong></span>
           </div>
         </div>
       </div>
 
-      {/* Main Split View */}
-      <div className="map-main-split">
+      {/* Main Split View: Tactical Map + Right Info Sidebar */}
+      <div className="map-main-split-v2">
         <FullTacticalMap
           cursorPos={cursorPos}
           onCursorMove={setCursorPos}
           activeLayers={layers}
-          uavs={uavMarkers}
-          targets={layers.targets ? targets : []}
-          pois={layers.poi ? poiList : []}
         />
-        <MapInfoSidebar cursorPos={cursorPos} layers={layers} onToggleLayer={handleToggleLayer} />
+        <MapInfoSidebar
+          cursorPos={cursorPos}
+          layers={layers}
+          onToggleLayer={handleToggleLayer}
+        />
       </div>
 
-      {/* Bottom Grid: 3 Panels */}
-      <div className="map-bottom-grid">
-        {/* Panel 1: DANH SÁCH UAV */}
-        <div className="map-bottom-card">
-          <div className="panel-title">DANH SÁCH UAV</div>
-          <div className="map-uav-list">
-            {uavs.map((uav) => (
-              <div key={uav.id} className="map-uav-item">
-                <div className="uav-item-icon"><Plane size={16} /></div>
-                <div className="uav-item-meta">
-                  <div className="uav-item-id">{uav.name}</div>
-                  <div className="uav-item-model">{uav.type || "-"}</div>
-                </div>
-                <span className={`uav-status-badge ${STATUS_COLOR[uav.status] ?? "grey"}`}>{STATUS_LABEL[uav.status] ?? uav.status}</span>
-                <div className="uav-battery-bar">
-                  <strong>{uavPositions[uav.id]?.battery_pct ?? "-"}%</strong>
-                  <div className="bat-track">
-                    <div className="bat-fill" style={{ width: `${uavPositions[uav.id]?.battery_pct ?? 0}%` }} />
-                  </div>
-                </div>
-              </div>
-            ))}
+      {/* Bottom Grid: 3 Columns */}
+      <div className="map-bottom-3col">
+        {/* Column 1: DANH SÁCH UAV */}
+        <div className="dashboard-panel map-btm-panel">
+          <div className="panel-section-header">
+            <h3 className="section-title">DANH SÁCH UAV</h3>
           </div>
+          <div className="map-uav-rows">
+            <div className="uav-row-item">
+              <Plane size={15} className="ic-uav" />
+              <div className="uav-name-meta">
+                <span className="title">UAV_01</span>
+                <span className="sub">Falcon 8X</span>
+              </div>
+              <span className="status-tag green">Đang bay</span>
+              <div className="bat-group">
+                <span className="val">78%</span>
+                <div className="bat-bar-track"><div className="bat-bar-fill" style={{ width: "78%" }} /></div>
+              </div>
+            </div>
+
+            <div className="uav-row-item">
+              <Plane size={15} className="ic-uav" />
+              <div className="uav-name-meta">
+                <span className="title">UAV_02</span>
+                <span className="sub">Eagle Pro</span>
+              </div>
+              <span className="status-tag green">Đang bay</span>
+              <div className="bat-group">
+                <span className="val">78%</span>
+                <div className="bat-bar-track"><div className="bat-bar-fill" style={{ width: "78%" }} /></div>
+              </div>
+            </div>
+
+            <div className="uav-row-item">
+              <Plane size={15} className="ic-uav" />
+              <div className="uav-name-meta">
+                <span className="title">UAV_03</span>
+                <span className="sub">SkyEye 4K</span>
+              </div>
+              <span className="status-tag orange">Đang theo dõi</span>
+              <div className="bat-group">
+                <span className="val">62%</span>
+                <div className="bat-bar-track"><div className="bat-bar-fill" style={{ width: "62%" }} /></div>
+              </div>
+            </div>
+
+            <div className="uav-row-item">
+              <Plane size={15} className="ic-uav" />
+              <div className="uav-name-meta">
+                <span className="title">UAV_04</span>
+                <span className="sub">Phantom 4 RTK</span>
+              </div>
+              <span className="status-tag green">Đang bay</span>
+              <div className="bat-group">
+                <span className="val">92%</span>
+                <div className="bat-bar-track"><div className="bat-bar-fill" style={{ width: "92%" }} /></div>
+              </div>
+            </div>
+          </div>
+          <a href="#uavs" className="btm-link-footer">Xem tất cả UAV</a>
         </div>
 
-        {/* Panel 2: ĐIỂM QUAN TÂM (POI) — bảng pois thật trong SQLite */}
-        <div className="map-bottom-card">
-          <div className="panel-title-row">
-            <span className="panel-title">ĐIỂM QUAN TÂM (POI)</span>
+        {/* Column 2: ĐIỂM QUAN TÂM (POI) */}
+        <div className="dashboard-panel map-btm-panel">
+          <div className="panel-section-header">
+            <h3 className="section-title">ĐIỂM QUAN TÂM (POI)</h3>
+            <button className="btn-add-outline">+ Thêm POI</button>
           </div>
-          <div className="map-poi-list">
-            {poiList.length === 0 && <p className="muted">Chưa có POI nào. Rê chuột trên bản đồ rồi đặt tên + "Thêm POI".</p>}
-            {poiList.map((poi) => (
-              <div key={poi.id} className="map-poi-item">
-                <span className="poi-icon purple"><Star size={14} /></span>
-                <span className="poi-id">#{poi.id}</span>
-                <span className="poi-name">{poi.name}</span>
-                <span className="poi-coords">{poi.lat.toFixed(6)}° N, {poi.lon.toFixed(6)}° E</span>
-                <button className="icon-action-btn danger" title="Xoá" onClick={() => removePoi(poi.id)}><Trash2 size={12} /></button>
-              </div>
-            ))}
+          <div className="poi-rows">
+            <div className="poi-row-item">
+              <Star size={14} className="poi-star-ic" />
+              <span className="poi-code">POI_01</span>
+              <span className="poi-title">Trạm biến áp 110kV</span>
+              <span className="poi-coord">21.027650° N, 105.851200° E</span>
+            </div>
+            <div className="poi-row-item">
+              <Star size={14} className="poi-star-ic orange" />
+              <span className="poi-code">POI_02</span>
+              <span className="poi-title">Kho xăng dầu</span>
+              <span className="poi-coord">21.024100° N, 105.848900° E</span>
+            </div>
+            <div className="poi-row-item">
+              <Star size={14} className="poi-star-ic blue" />
+              <span className="poi-code">POI_03</span>
+              <span className="poi-title">Cầu Đông Trù</span>
+              <span className="poi-coord">21.030500° N, 105.857800° E</span>
+            </div>
+            <div className="poi-row-item">
+              <Star size={14} className="poi-star-ic red" />
+              <span className="poi-code">POI_04</span>
+              <span className="poi-title">Bệnh viện đa khoa</span>
+              <span className="poi-coord">21.021800° N, 105.852600° E</span>
+            </div>
           </div>
-          <div className="poi-add-row" style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
-            <input
-              className="filter-select"
-              style={{ flex: 1 }}
-              placeholder={cursorPos ? "Tên POI tại vị trí con trỏ..." : "Di chuột trên bản đồ trước"}
-              value={newPoiName}
-              onChange={(e) => setNewPoiName(e.target.value)}
-              disabled={!cursorPos}
-            />
-            <button className="add-btn" onClick={addPoi} disabled={!cursorPos || !newPoiName.trim()}>+ Thêm POI</button>
-          </div>
+          <a href="#pois" className="btm-link-footer">Xem tất cả POI</a>
         </div>
 
-        {/* Panel 3: TỌA ĐỘ ĐÃ ĐÁNH DẤU — cùng bảng pois, type="pin" */}
-        <div className="map-bottom-card">
-          <div className="panel-title-row">
-            <span className="panel-title">TỌA ĐỘ ĐÃ ĐÁNH DẤU</span>
-            <button className="add-btn" onClick={addPin} disabled={!cursorPos}>+ Thêm tọa độ</button>
+        {/* Column 3: TỌA ĐỘ ĐÃ ĐÁNH DẤU */}
+        <div className="dashboard-panel map-btm-panel">
+          <div className="panel-section-header">
+            <h3 className="section-title">TỌA ĐỘ ĐÃ ĐÁNH DẤU</h3>
+            <button className="btn-add-outline">+ Thêm tọa độ</button>
           </div>
-          <div className="map-coords-list">
-            {pinnedCoords.length === 0 && <p className="muted">Chưa có tọa độ nào được đánh dấu.</p>}
-            {pinnedCoords.map((coord, i) => (
-              <div key={coord.id} className="map-coord-item">
-                <span className="coord-num-badge">{i + 1}</span>
-                <span className="coord-text">{coord.lat.toFixed(6)}° N, {coord.lon.toFixed(6)}° E</span>
-              </div>
-            ))}
+          <div className="coord-marks-rows">
+            <div className="mark-row-item">
+              <MapPin size={14} className="mark-pin-ic" />
+              <span className="mark-text">21.028500° N, 105.849200° E</span>
+            </div>
+            <div className="mark-row-item">
+              <MapPin size={14} className="mark-pin-ic" />
+              <span className="mark-text">21.027100° N, 105.855300° E</span>
+            </div>
+            <div className="mark-row-item">
+              <MapPin size={14} className="mark-pin-ic" />
+              <span className="mark-text">21.023900° N, 105.857100° E</span>
+            </div>
+            <div className="mark-row-item">
+              <MapPin size={14} className="mark-pin-ic" />
+              <span className="mark-text">21.022800° N, 105.852400° E</span>
+            </div>
+            <div className="mark-row-item">
+              <MapPin size={14} className="mark-pin-ic" />
+              <span className="mark-text">21.025600° N, 105.847800° E</span>
+            </div>
           </div>
-          <div className="link-action-footer danger-link">
-            <a href="#clear" onClick={(e) => { e.preventDefault(); clearPins(); }}><Trash2 size={14} /> Xóa tất cả</a>
-          </div>
+          <button className="btm-link-footer red-trash"><Trash2 size={13} /> Xóa tất cả</button>
         </div>
       </div>
     </div>
