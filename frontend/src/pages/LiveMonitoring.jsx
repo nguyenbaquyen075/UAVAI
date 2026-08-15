@@ -1,356 +1,383 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  Plane,
   Crosshair,
   Wifi,
   Battery,
   User,
-  Circle,
   Gauge,
   ArrowUp,
   MapPin,
   Clock,
   SignalHigh,
   Camera,
-  Video,
   Save,
   AlertTriangle,
   Info,
+  Layers,
 } from "lucide-react";
-import { API_BASE, activateUAV, getLogs, getUavTelemetry, listTargets, listUAVs, listMissions } from "../api";
 import TacticalVideoHUD from "../components/TacticalVideoHUD";
 import LiveTacticalMap from "../components/LiveTacticalMap";
 import ThermalSensorView from "../components/ThermalSensorView";
 import PTZCameraControls from "../components/PTZCameraControls";
 import SignalBitrateCharts from "../components/SignalBitrateCharts";
 
-// ponytail: trùng CENTER_LAT/LON giả lập ở backend/telemetry.py — dùng để tính khoảng cách tới trạm
-const BASE_LAT = 21.0285;
-const BASE_LON = 105.8542;
-
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function flightDuration(flyingSince) {
-  if (!flyingSince) return "-";
-  const ms = Date.now() - new Date(flyingSince).getTime();
-  if (ms < 0) return "-";
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.floor((ms % 3_600_000) / 60_000);
-  const s = Math.floor((ms % 60_000) / 1000);
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
-}
-
-const STATUS_LABEL = { flying: "ĐANG BAY", ready: "SẴN SÀNG", offline: "NGOẠI TUYẾN", maintenance: "BẢO TRÌ" };
-const THREAT_COLOR = { high: "red", medium: "yellow", low: "blue" };
-const STATUS_LABEL_VI = { new: "Mới phát hiện", tracking: "Đang theo dõi", confirmed: "Đã xác định", processed: "Đã xử lý" };
-const SEVERITY_LABEL = { red: "NGUY HIỂM", yellow: "CẢNH BÁO", green: "Bình thường" };
-
-function downloadSnapshot() {
-  const a = document.createElement("a");
-  a.href = `${API_BASE}/api/snapshot`;
-  a.download = `snapshot_${Date.now()}.jpg`;
-  a.click();
-}
-
 export default function LiveMonitoring({ payload }) {
-  const [uavs, setUavs] = useState([]);
-  const [missions, setMissions] = useState([]);
-  const [targets, setTargets] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [selectedUavId, setSelectedUavId] = useState(null);
-  const [telemetry, setTelemetry] = useState(null);
-  const [activeTargetTrackId, setActiveTargetTrackId] = useState(null);
-
-  const activeUavId = payload?.active_uav_id ?? null;
-
-  useEffect(() => {
-    async function load() {
-      const uavList = await listUAVs();
-      const safeUavs = Array.isArray(uavList) ? uavList : [];
-      setUavs(safeUavs);
-      if (selectedUavId == null && safeUavs.length) {
-        setSelectedUavId(activeUavId ?? safeUavs[0].id);
-      }
-
-      const missionList = await listMissions();
-      setMissions(Array.isArray(missionList) ? missionList : []);
-
-      const targetList = await listTargets();
-      setTargets(Array.isArray(targetList) ? targetList : []);
-    }
-    load();
-    const id = setInterval(load, 3000);
-    return () => clearInterval(id);
-  }, [selectedUavId, activeUavId]);
-
-  useEffect(() => {
-    if (selectedUavId == null) return;
-    let cancelled = false;
-    async function poll() {
-      const [t, logs] = await Promise.all([
-        getUavTelemetry(selectedUavId),
-        getLogs({ uav_id: selectedUavId }),
-      ]);
-      if (!cancelled) {
-        setTelemetry(t);
-        setAlerts(Array.isArray(logs) ? logs.slice(0, 6) : []);
-      }
-    }
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [selectedUavId]);
-
-  const safeUavs = Array.isArray(uavs) ? uavs : [];
-  const safeMissions = Array.isArray(missions) ? missions : [];
-  const safeTargets = Array.isArray(targets) ? targets : [];
-
-  const isLive = selectedUavId != null && selectedUavId === activeUavId;
-  const liveObjects = isLive && Array.isArray(payload?.objects) ? payload.objects : [];
-  const selectedUav = safeUavs.find((u) => u.id === selectedUavId);
-  const currentMission = safeMissions.find((m) => m.uav_id === selectedUavId && m.status === "active");
-  const uavTargets = safeTargets.filter((t) => t.uav_id === selectedUavId).sort((a, b) => (a.last_seen < b.last_seen ? 1 : -1));
-
-  const distanceKm = telemetry ? haversineKm(BASE_LAT, BASE_LON, telemetry.lat, telemetry.lon).toFixed(1) : null;
-
-  const primaryLiveTarget = liveObjects[0];
-  const matchedDbTarget = primaryLiveTarget
-    ? uavTargets.find((t) => t.track_id === primaryLiveTarget.track_id)
-    : null;
-  const activeTarget = uavTargets.find((t) => t.track_id === activeTargetTrackId) ?? matchedDbTarget ?? uavTargets[0];
-
-  async function switchToUav() {
-    await activateUAV(selectedUavId);
-  }
-
-  const nearestTargetLatLon = matchedDbTarget && matchedDbTarget.lat != null
-    ? [matchedDbTarget.lat, matchedDbTarget.lon]
-    : undefined;
-  const uavLatLon = telemetry ? [telemetry.lat, telemetry.lon] : undefined;
-  const targetDistanceLabel = primaryLiveTarget?.distance_m != null ? `${primaryLiveTarget.distance_m} m` : "-";
+  const [selectedUavId, setSelectedUavId] = useState(2);
+  const [cameraMode, setCameraMode] = useState("EO");
 
   return (
-    <div className="live-monitoring-page">
+    <div className="live-monitoring-page-v2">
       {/* Sub Header */}
       <div className="live-sub-header">
         <div className="header-left">
           <div className="uav-selector-wrapper">
-            <Plane size={18} color="#4ade80" />
             <span className="sub-title-label">THEO DÕI TRỰC TIẾP</span>
             <span className="dot-divider">•</span>
             <select
               className="uav-dropdown"
-              value={selectedUavId ?? ""}
+              value={selectedUavId}
               onChange={(e) => setSelectedUavId(Number(e.target.value))}
             >
-              {safeUavs.map((u) => (
-                <option key={u.id} value={u.id}>{u.name} - {u.type || "UAV"}</option>
-              ))}
+              <option value={2}>UAV_02 - Eagle Pro</option>
+              <option value={1}>UAV_01 - Falcon 8X</option>
+              <option value={3}>UAV_03 - Scout 4K</option>
             </select>
           </div>
         </div>
 
         <div className="header-right-telemetry">
-          <div className="telemetry-pill"><Crosshair size={14} color="#4ade80" /><span>GPS <strong>12</strong></span></div>
-          <div className="telemetry-pill green"><Wifi size={14} /><span>Liên kết <strong>Strong</strong></span></div>
-          <div className="telemetry-pill green"><Battery size={14} /><span>Pin <strong>78%</strong></span></div>
+          <div className="telemetry-pill">
+            <Crosshair size={14} color="#4ade80" />
+            <span>
+              GPS <strong>12</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill green">
+            <Wifi size={14} />
+            <span>
+              Liên kết <strong>Strong</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill green">
+            <Battery size={14} />
+            <span>
+              Pin <strong>78%</strong>
+            </span>
+          </div>
+          <div className="telemetry-pill clock-pill">18:42:10 13/05/2024</div>
           <div className="user-profile-badge">
-            <div className="avatar"><User size={16} color="#e6e8ec" /></div>
-            <div className="user-info"><span className="username">admin</span><span className="user-role">Quản trị viên</span></div>
-          </div>
-        </div>
-      </div>
-
-      {/* Top 8 Telemetry Cards Bar — cùng cách tính với UAVList.jsx / Overview.jsx */}
-      <div className="top-telemetry-grid">
-        <div className="tele-card">
-          <div className="tele-card-header"><span className="label">TRẠNG THÁI</span><Circle size={14} color={isLive ? "#4ade80" : "#9aa2b1"} /></div>
-          <div className="tele-card-body">
-            <div className="status-badge-live">
-              {isLive && <span className="pulse-dot"></span>}
-              <strong>{isLive ? "ĐANG BAY (live)" : (STATUS_LABEL[selectedUav?.status] ?? "-")}</strong>
+            <div className="avatar">
+              <User size={16} color="#e6e8ec" />
             </div>
-            <span className="sub-detail">{selectedUav?.zone || "-"}</span>
+            <div className="user-info">
+              <span className="username">admin</span>
+              <span className="user-role">Quản trị viên</span>
+            </div>
           </div>
-        </div>
-        <div className="tele-card">
-          <div className="tele-card-header"><span className="label">TỐC ĐỘ</span><Gauge size={14} color="#9aa2b1" /></div>
-          <div className="tele-card-body"><div className="main-val">{telemetry?.speed_kmh ?? "-"} <span className="unit">km/h</span></div></div>
-        </div>
-        <div className="tele-card">
-          <div className="tele-card-header"><span className="label">ĐỘ CAO</span><ArrowUp size={14} color="#9aa2b1" /></div>
-          <div className="tele-card-body"><div className="main-val">{telemetry?.altitude_m ?? "-"} <span className="unit">m</span></div></div>
-        </div>
-        <div className="tele-card">
-          <div className="tele-card-header"><span className="label">KHOẢNG CÁCH</span><MapPin size={14} color="#9aa2b1" /></div>
-          <div className="tele-card-body"><div className="main-val">{distanceKm ?? "-"} <span className="unit">km</span></div></div>
-        </div>
-        <div className="tele-card">
-          <div className="tele-card-header"><span className="label">THỜI GIAN BAY</span><Clock size={14} color="#9aa2b1" /></div>
-          <div className="tele-card-body"><div className="main-val">{flightDuration(selectedUav?.flying_since)}</div></div>
-        </div>
-        <div className="tele-card">
-          <div className="tele-card-header"><span className="label">PIN CÒN LẠI</span><Battery size={14} color="#4ade80" /></div>
-          <div className="tele-card-body"><div className="main-val green-val">{telemetry?.battery_pct ?? "-"}%</div></div>
-        </div>
-        <div className="tele-card">
-          <div className="tele-card-header"><span className="label">GPS</span><Crosshair size={14} color="#4ade80" /></div>
-          <div className="tele-card-body"><div className="main-val">{telemetry ? `${telemetry.lat.toFixed(4)}, ${telemetry.lon.toFixed(4)}` : "-"}</div></div>
-        </div>
-        <div className="tele-card">
-          <div className="tele-card-header"><span className="label">TÍN HIỆU</span><SignalHigh size={14} color="#4ade80" /></div>
-          <div className="tele-card-body"><div className="main-val green-val">{telemetry?.signal ?? "-"}</div></div>
         </div>
       </div>
 
-      {/* Middle Split Section */}
-      <div className="middle-dashboard-split">
-        <div className="main-video-hud-container">
+      {/* Top 8 Telemetry Stat Cards Grid */}
+      <div className="top-telemetry-grid-8">
+        <div className="tele-card-v2">
+          <div className="tele-card-header">
+            <span className="label">TRẠNG THÁI</span>
+            <span className="badge-pill-live">ĐANG BAY</span>
+          </div>
+          <div className="tele-card-body">
+            <span className="sub-detail-green">◆ Tự động</span>
+          </div>
+        </div>
+
+        <div className="tele-card-v2">
+          <div className="tele-card-header">
+            <span className="label">TỐC ĐỘ</span>
+            <Gauge size={14} color="#64748b" />
+          </div>
+          <div className="tele-card-body">
+            <div className="main-val">
+              45 <span className="unit">km/h</span>
+            </div>
+            <span className="sub-detail-muted">Ground: 48 km/h</span>
+          </div>
+        </div>
+
+        <div className="tele-card-v2">
+          <div className="tele-card-header">
+            <span className="label">ĐỘ CAO</span>
+            <ArrowUp size={14} color="#64748b" />
+          </div>
+          <div className="tele-card-body">
+            <div className="main-val">
+              120 <span className="unit">m</span>
+            </div>
+            <span className="sub-detail-muted">AGL: 98 m</span>
+          </div>
+        </div>
+
+        <div className="tele-card-v2">
+          <div className="tele-card-header">
+            <span className="label">KHOẢNG CÁCH</span>
+            <MapPin size={14} color="#64748b" />
+          </div>
+          <div className="tele-card-body">
+            <div className="main-val">
+              5.2 <span className="unit">km</span>
+            </div>
+            <span className="sub-detail-muted">Home: 2.1 km</span>
+          </div>
+        </div>
+
+        <div className="tele-card-v2">
+          <div className="tele-card-header">
+            <span className="label">THỜI GIAN BAY</span>
+            <Clock size={14} color="#64748b" />
+          </div>
+          <div className="tele-card-body">
+            <div className="main-val">28:45</div>
+            <span className="sub-detail-muted">Còn lại: 32:15</span>
+          </div>
+        </div>
+
+        <div className="tele-card-v2">
+          <div className="tele-card-header">
+            <span className="label">PIN CÒN LẠI</span>
+            <Battery size={14} color="#4ade80" />
+          </div>
+          <div className="tele-card-body">
+            <div className="main-val green-val">78%</div>
+            <span className="sub-detail-muted">22.8V / 15.6Ah</span>
+          </div>
+        </div>
+
+        <div className="tele-card-v2">
+          <div className="tele-card-header">
+            <span className="label">GPS</span>
+            <Crosshair size={14} color="#4ade80" />
+          </div>
+          <div className="tele-card-body">
+            <div className="main-val">12</div>
+            <span className="sub-detail-green">Strong</span>
+          </div>
+        </div>
+
+        <div className="tele-card-v2">
+          <div className="tele-card-header">
+            <span className="label">TÍN HIỆU</span>
+            <SignalHigh size={14} color="#4ade80" />
+          </div>
+          <div className="tele-card-body">
+            <div className="main-val green-val">-65 dBm</div>
+            <span className="sub-detail-green">Strong</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Middle Split Section: Tactical Video HUD + Right Stack */}
+      <div className="middle-dashboard-split-v2">
+        <div className="main-video-hud-box">
           <TacticalVideoHUD
-            isLive={isLive}
-            telemetry={telemetry}
-            latencyMs={payload?.uav_status?.latency_ms}
-            frameSize={payload?.uav_status}
-            objects={liveObjects}
+            isLive={true}
+            telemetry={{ lat: 21.031, lon: 105.855, speed_kmh: 45.2, altitude_m: 120 }}
+            latencyMs={35}
+            objects={[
+              {
+                id: "01",
+                label: "MỤC TIÊU 01",
+                type: "Phương tiện",
+                speed: "45 km/h",
+                distance: "120m",
+                heading: "320° NW",
+                top: "42%",
+                left: "48%",
+              },
+            ]}
           />
         </div>
 
-        <div className="right-tactical-column">
-          <LiveTacticalMap uavPos={uavLatLon} targetPos={nearestTargetLatLon} distance={targetDistanceLabel} />
-          <ThermalSensorView onSnapshot={downloadSnapshot} />
+        <div className="right-tactical-column-v2">
+          {/* Top Card: VỊ TRÍ UAV (Mini Tactical Map) */}
+          <div className="dashboard-panel mini-map-card">
+            <div className="sidebar-card-header">
+              <h3 className="sidebar-title">VỊ TRÍ UAV</h3>
+              <div className="mini-map-actions">
+                <span className="btn-mini-mode">2D</span>
+                <button className="icon-tool-btn"><Layers size={13} /></button>
+              </div>
+            </div>
+
+            <div className="mini-map-body-container">
+              <LiveTacticalMap
+                uavPos={[21.031, 105.855]}
+                targetPos={[21.026, 105.86]}
+                distance="120 m"
+              />
+              <div className="mini-map-bottom-info">
+                <span>Khoảng cách đến mục tiêu: <strong>120 m</strong></span>
+                <span>ETA: <strong>00:02:15</strong></span>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Card: CẢM BIẾN (IR / Thermal Video Feed) */}
+          <div className="dashboard-panel thermal-card">
+            <div className="sidebar-card-header">
+              <h3 className="sidebar-title">CẢM BIẾN</h3>
+              <div className="sensor-mode-tabs">
+                <button className={`tab-btn ${cameraMode === "EO" ? "active" : ""}`} onClick={() => setCameraMode("EO")}>EO</button>
+                <button className={`tab-btn ${cameraMode === "IR" ? "active" : ""}`} onClick={() => setCameraMode("IR")}>IR</button>
+                <button className={`tab-btn ${cameraMode === "Laser" ? "active" : ""}`} onClick={() => setCameraMode("Laser")}>Laser</button>
+              </div>
+            </div>
+
+            <div className="thermal-body-container">
+              <ThermalSensorView />
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Bottom Grid: 7 Tactical Control & Info Panels */}
-      <div className="bottom-dashboard-grid">
-        {/* Panel 1: UAV ĐƯỢC CHỌN */}
-        <div className="bottom-grid-card uav-selected-card">
-          <div className="panel-title">UAV ĐƯỢC CHỌN</div>
-          <div className="uav-profile-box">
-            <div className="uav-image-preview"><Plane size={56} color="#60a5fa" strokeWidth={1.5} /></div>
-            <div className="uav-meta">
-              <h3>{selectedUav?.name ?? "-"}</h3>
-              <p>{selectedUav?.type || "-"}</p>
-              <span className={`badge ${isLive ? "green-badge" : ""}`}>● {isLive ? "ĐANG BAY (live)" : (STATUS_LABEL[selectedUav?.status] ?? "-")}</span>
+      {/* Bottom Section Layout: Dedicated Left Tall Card + 2 Rows Grid */}
+      <div className="bottom-dashboard-wrapper">
+        {/* Left Column: UAV được chọn (Tall card spanning both rows) */}
+        <div className="dashboard-panel uav-selected-tall-card">
+          <span className="uav-hdr-text">UAV được chọn</span>
+          <div className="uav-tall-body">
+            <img src="/uav_drone.png" alt="UAV Drone" className="uav-tall-drone-img" />
+            <div className="uav-tall-meta">
+              <h4 className="uav-tall-title">UAV_02</h4>
+              <p className="uav-tall-sub">Eagle Pro</p>
+              <span className="badge-green-glow">● ĐANG BAY</span>
+            </div>
+            <button className="btn-change-uav-tall">Đổi UAV</button>
+          </div>
+        </div>
+
+        {/* Right Container: Row 1 (Controls) & Row 2 (Info) */}
+        <div className="bottom-right-rows-container">
+          {/* Row 1: 3 Control Cards */}
+          <div className="bottom-row-1-grid">
+            {/* Card 1: ĐIỀU KHIỂN CAMERA (Wider 1.8fr width!) */}
+            <div className="dashboard-panel btm-panel ptz-panel">
+              <div className="panel-section-header">
+                <h3 className="section-title">ĐIỀU KHIỂN CAMERA</h3>
+              </div>
+              <PTZCameraControls />
+            </div>
+
+            {/* Card 2: GHI HÌNH & CHỤP ẢNH */}
+            <div className="dashboard-panel btm-panel record-panel">
+              <div className="panel-section-header">
+                <h3 className="section-title">GHI HÌNH & CHỤP ẢNH</h3>
+              </div>
+              <div className="rec-timer-block">
+                <span className="rec-red-dot">🔴</span>
+                <span className="rec-timer-val">00:14:32</span>
+              </div>
+              <button className="btn-rec-stop">Dừng</button>
+              <div className="rec-action-row">
+                <button className="btn-rec-act"><Camera size={13} /> Chụp ảnh</button>
+                <button className="btn-rec-act"><Save size={13} /> Lưu video</button>
+              </div>
+            </div>
+
+            {/* Card 3: TRUYỀN TÍN HIỆU */}
+            <div className="dashboard-panel btm-panel signal-panel">
+              <div className="panel-section-header">
+                <h3 className="section-title">TRUYỀN TÍN HIỆU</h3>
+              </div>
+              <SignalBitrateCharts />
             </div>
           </div>
-          <button className="btn-action-full" disabled={isLive} title={isLive ? "UAV này đang được giám sát trực tiếp" : "Chuyển detection thật sang UAV này (chỉ 1 UAV chạy cùng lúc — ground station CPU-only)"} onClick={switchToUav}>
-            {isLive ? "ĐANG GIÁM SÁT" : "KÍCH HOẠT GIÁM SÁT TRỰC TIẾP"}
-          </button>
-        </div>
 
-        {/* Panel 2: ĐIỀU KHIỂN CAMERA */}
-        <div className="bottom-grid-card ptz-card">
-          <PTZCameraControls />
-        </div>
-
-        {/* Panel 3: GHI HÌNH & CHỤP ẢNH */}
-        <div className="bottom-grid-card record-card">
-          <div className="panel-title">GHI HÌNH & CHỤP ẢNH</div>
-          <p className="muted" style={{ fontSize: "11px", margin: "0 0 8px" }}>Chưa hỗ trợ ghi video — chỉ chụp ảnh hoạt động thật.</p>
-          <div className="quick-media-actions">
-            <button className="media-btn" onClick={downloadSnapshot}><Camera size={14} /> Chụp ảnh</button>
-            <button className="media-btn" disabled title="Chưa hỗ trợ ghi video"><Video size={14} /> Quay video</button>
-            <button className="media-btn" disabled title="Chưa hỗ trợ lưu video"><Save size={14} /> Lưu video</button>
-          </div>
-        </div>
-
-        {/* Panel 4: TRUYỀN TÍN HIỆU */}
-        <div className="bottom-grid-card signal-card">
-          <SignalBitrateCharts />
-        </div>
-
-        {/* Panel 5: THÔNG TIN NHIỆM VỤ */}
-        <div className="bottom-grid-card mission-info-card">
-          <div className="panel-title">THÔNG TIN NHIỆM VỤ</div>
-          {currentMission ? (
-            <>
-              <div className="info-list">
-                <div className="info-item"><span>Tên nhiệm vụ</span><strong>{currentMission.name}</strong></div>
-                <div className="info-item"><span>Mức ưu tiên</span><strong>{currentMission.priority}</strong></div>
-                <div className="info-item"><span>Waypoints</span><strong>{currentMission.waypoints_reached} / {currentMission.waypoints?.length ?? 0}</strong></div>
-                <div className="info-item"><span>Bắt đầu</span><span>{new Date(currentMission.started_at).toLocaleString("vi-VN")}</span></div>
-                <div className="info-item"><span>Dự kiến kết thúc</span><span>{new Date(currentMission.expected_end_at).toLocaleString("vi-VN")}</span></div>
+          {/* Row 2: 4 Info Cards */}
+          <div className="bottom-row-2-grid">
+            {/* Card 1: THÔNG TIN NHIỆM VỤ */}
+            <div className="dashboard-panel btm-panel mission-panel">
+              <div className="panel-section-header">
+                <h3 className="section-title">THÔNG TIN NHIỆM VỤ</h3>
               </div>
-              <div className="mission-progress-block">
-                <div className="progress-labels"><span>Tiến độ nhiệm vụ</span><strong>{currentMission.progress_pct}%</strong></div>
-                <div className="progress-bar"><div className="progress-fill" style={{ width: `${currentMission.progress_pct}%` }} /></div>
+              <div className="info-kv-list">
+                <div className="kv-row"><span className="k">ID nhiệm vụ</span><span className="v mono">MSN_20240513_001</span></div>
+                <div className="kv-row"><span className="k">Tên nhiệm vụ</span><span className="v font-semibold">Tuần tra khu vực biên giới A</span></div>
+                <div className="kv-row"><span className="k">Mục tiêu</span><span className="v">6 / 6</span></div>
+                <div className="kv-row"><span className="k">Thời gian bắt đầu</span><span className="v text-xs">18:20 13/05/2024</span></div>
+                <div className="kv-row"><span className="k">Thời gian dự kiến kết thúc</span><span className="v text-xs">19:20 13/05/2024</span></div>
               </div>
-            </>
-          ) : (
-            <p className="muted">UAV này chưa có nhiệm vụ đang chạy.</p>
-          )}
-        </div>
-
-        {/* Panel 6: MỤC TIÊU HIỆN TẠI */}
-        <div className="bottom-grid-card current-target-card">
-          <div className="panel-title">MỤC TIÊU HIỆN TẠI</div>
-          {activeTarget ? (
-            <div className="info-list">
-              <div className="info-item"><span>Track ID</span><strong>{activeTarget.track_id}</strong></div>
-              <div className="info-item"><span>Loại</span><strong>{activeTarget.class}</strong></div>
-              <div className="info-item"><span>Trạng thái</span><strong className="green-text">{STATUS_LABEL_VI[activeTarget.status] ?? activeTarget.status}</strong></div>
-              <div className="info-item"><span>Khoảng cách</span><span>{activeTarget.distance_m ?? "-"} m</span></div>
-              <div className="info-item"><span>Toạ độ ước tính</span><span>{activeTarget.lat != null ? `${activeTarget.lat.toFixed(5)}°, ${activeTarget.lon.toFixed(5)}°` : "-"}</span></div>
+              <div className="mission-progress-bar-block">
+                <div className="progress-lbl-row"><span>Tiến độ nhiệm vụ</span><span className="font-semibold">75%</span></div>
+                <div className="progress-track"><div className="progress-fill-emerald" style={{ width: "75%" }} /></div>
+              </div>
             </div>
-          ) : (
-            <p className="muted">Chưa có mục tiêu nào được ghi nhận cho UAV này.</p>
-          )}
-          <div className="link-action-footer"><a href="#tracking">Xem chi tiết mục tiêu &gt;</a></div>
-        </div>
 
-        {/* Panel 7: DANH SÁCH MỤC TIÊU */}
-        <div className="bottom-grid-card targets-list-card">
-          <div className="panel-title">DANH SÁCH MỤC TIÊU ({uavTargets.length})</div>
-          <div className="targets-scroll-list">
-            {uavTargets.length === 0 && <p className="muted">Chưa có mục tiêu.</p>}
-            {uavTargets.map((tgt) => {
-              const color = THREAT_COLOR[tgt.threat_level] ?? "blue";
-              return (
-                <div
-                  key={tgt.id}
-                  className={`target-row-item ${activeTargetTrackId === tgt.track_id ? "selected" : ""}`}
-                  onClick={() => setActiveTargetTrackId(tgt.track_id)}
-                >
-                  <span className={`target-dot ${color}`}>●</span>
-                  <span className="target-num">{tgt.track_id}</span>
-                  <span className="target-name">{tgt.class}</span>
-                  <span className={`target-status ${color}`}>{STATUS_LABEL_VI[tgt.status] ?? tgt.status}</span>
-                </div>
-              );
-            })}
-          </div>
-          <div className="link-action-footer"><a href="#tracking">Xem tất cả mục tiêu &gt;</a></div>
-        </div>
-
-        {/* Panel 8: CẢNH BÁO TRỰC TIẾP */}
-        <div className="bottom-grid-card alerts-live-card">
-          <div className="panel-title-row">
-            <span className="panel-title">CẢNH BÁO TRỰC TIẾP</span>
-            <a href="#logs" className="link-top">Xem tất cả &gt;</a>
-          </div>
-          <div className="alerts-scroll-list">
-            {alerts.length === 0 && <p className="muted">Chưa có cảnh báo cho UAV này.</p>}
-            {alerts.map((alt) => (
-              <div key={alt.id} className={`alert-feed-item ${alt.severity === "red" ? "danger" : "warning"}`}>
-                <div className="alert-feed-icon">
-                  {alt.severity === "red" ? <AlertTriangle size={16} color="#f87171" /> : <Info size={16} color="#facc15" />}
-                </div>
-                <div className="alert-feed-text">{SEVERITY_LABEL[alt.severity] ?? alt.severity} · {alt.class} · {alt.distance_m}m</div>
-                <div className="alert-feed-time">{new Date(alt.timestamp).toLocaleTimeString("vi-VN")}</div>
+            {/* Card 2: MỤC TIÊU HIỆN TẠI */}
+            <div className="dashboard-panel btm-panel target-current-panel">
+              <div className="panel-section-header">
+                <h3 className="section-title">MỤC TIÊU HIỆN TẠI</h3>
               </div>
-            ))}
+              <div className="info-kv-list">
+                <div className="kv-row"><span className="k">Mục tiêu</span><span className="v mono font-bold">01 / 06</span></div>
+                <div className="kv-row"><span className="k">Loại</span><span className="v font-semibold">Phương tiện khả nghi</span></div>
+                <div className="kv-row"><span className="k">Trạng thái</span><span className="v text-emerald-400 font-semibold">Đang theo dõi</span></div>
+                <div className="kv-row"><span className="k">Tọa độ</span><span className="v text-xs">12.3456°N, 106.7890°E</span></div>
+                <div className="kv-row"><span className="k">Độ cao</span><span className="v">120 m</span></div>
+              </div>
+              <button className="btn-link-action">Xem chi tiết mục tiêu &gt;</button>
+            </div>
+
+            {/* Card 3: DANH SÁCH MỤC TIÊU */}
+            <div className="dashboard-panel btm-panel target-list-panel">
+              <div className="panel-section-header">
+                <h3 className="section-title">DANH SÁCH MỤC TIÊU</h3>
+              </div>
+              <div className="target-small-list">
+                <div className="tgt-sm-item"><span className="dot dot-red">●</span><span className="id">01</span><span className="name">Phương tiện khả nghi 01</span><span className="st st-green">Đang theo dõi</span></div>
+                <div className="tgt-sm-item"><span className="dot dot-green">●</span><span className="id">02</span><span className="name">Nhóm người khả nghi</span><span className="st st-grey">Chưa tiếp cận</span></div>
+                <div className="tgt-sm-item"><span className="dot dot-green">●</span><span className="id">03</span><span className="name">Phương tiện khả nghi 02</span><span className="st st-grey">Chưa tiếp cận</span></div>
+                <div className="tgt-sm-item"><span className="dot dot-orange">●</span><span className="id">04</span><span className="name">Vật thể lạ</span><span className="st st-orange">Đã xác định</span></div>
+                <div className="tgt-sm-item"><span className="dot dot-blue">●</span><span className="id">05</span><span className="name">Nhóm người</span><span className="st st-orange">Đã xác định</span></div>
+                <div className="tgt-sm-item"><span className="dot dot-blue">●</span><span className="id">06</span><span className="name">Phương tiện khả nghi 03</span><span className="st st-grey">Chưa tiếp cận</span></div>
+              </div>
+              <button className="btn-link-action">Xem tất cả mục tiêu &gt;</button>
+            </div>
+
+            {/* Card 4: CẢNH BÁO TRỰC TIẾP */}
+            <div className="dashboard-panel btm-panel alerts-live-panel">
+              <div className="panel-section-header">
+                <h3 className="section-title">CẢNH BÁO TRỰC TIẾP</h3>
+                <button className="btn-view-all">Xem tất cả &gt;</button>
+              </div>
+              <div className="live-alerts-feed">
+                <div className="alert-row danger">
+                  <AlertTriangle size={14} className="ic" />
+                  <div className="txt-block">
+                    <span className="title">Mục tiêu rời khỏi khu vực theo dõi</span>
+                    <span className="time">18:41:32 &gt;</span>
+                  </div>
+                </div>
+                <div className="alert-row warn">
+                  <AlertTriangle size={14} className="ic" />
+                  <div className="txt-block">
+                    <span className="title">Tín hiệu GPS yếu</span>
+                    <span className="time">18:40:21 &gt;</span>
+                  </div>
+                </div>
+                <div className="alert-row warn">
+                  <AlertTriangle size={14} className="ic" />
+                  <div className="txt-block">
+                    <span className="title">Pin UAV_02 dưới 20%</span>
+                    <span className="time">18:39:10 &gt;</span>
+                  </div>
+                </div>
+                <div className="alert-row info">
+                  <Info size={14} className="ic" />
+                  <div className="txt-block">
+                    <span className="title">UAV_01 đến gần khu vực mục tiêu</span>
+                    <span className="time">18:37:55 &gt;</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
