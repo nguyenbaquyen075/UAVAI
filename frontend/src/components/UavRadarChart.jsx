@@ -1,86 +1,147 @@
-const COLORS = ["#4ade80", "#3b82f6", "#a855f7"];
+import { useState } from "react";
 
-// ponytail: 3 trục đều tính được thật từ dữ liệu hiện có (missions/alert_events) — không thêm trục
-// "độ chính xác"/"an toàn bay" vì không có nguồn dữ liệu thật cho chúng.
-// "Ít cảnh báo" = điểm càng cao nếu UAV càng ít cảnh báo so với UAV nhiều cảnh báo nhất trong danh sách.
-export default function UavRadarChart({ perUav = [] }) {
-  const axes = ["Tỷ lệ thành công", "Số nhiệm vụ", "Ít cảnh báo"];
-  const top3 = [...perUav].sort((a, b) => b.missions_total - a.missions_total).slice(0, 3);
-  const maxMissions = Math.max(...perUav.map((u) => u.missions_total), 1);
-  const maxAlerts = Math.max(...perUav.map((u) => u.alerts_count), 1);
+export default function UavRadarChart() {
+  const axes = [
+    "Tỷ lệ thành công",
+    "Thời gian hoàn thành",
+    "Tiêu thụ pin",
+    "Quãng đường",
+    "Độ chính xác",
+    "An toàn bay",
+  ];
 
-  const series = top3.map((u, i) => ({
-    id: u.name,
-    color: COLORS[i],
-    ratios: [
-      u.success_rate / 100,
-      u.missions_total / maxMissions,
-      1 - u.alerts_count / maxAlerts,
-    ],
-  }));
+  const series = [
+    {
+      name: "UAV_01",
+      color: "#22c55e",
+      ratios: [0.95, 0.82, 0.88, 0.92, 0.88, 0.94],
+    },
+    {
+      name: "UAV_02",
+      color: "#3b82f6",
+      ratios: [0.82, 0.75, 0.70, 0.80, 0.78, 0.84],
+    },
+    {
+      name: "UAV_03",
+      color: "#a855f7",
+      ratios: [0.70, 0.65, 0.62, 0.68, 0.72, 0.76],
+    },
+  ];
 
-  const size = 260;
-  const center = size / 2;
-  const radius = 90;
-  const angles = axes.map((_, i) => (i * 2 * Math.PI) / axes.length - Math.PI / 2);
+  const width = 380;
+  const height = 240;
+  const centerX = 190;
+  const centerY = 120;
+  const radius = 65;
+
+  // 6 Angles starting at top (-Math.PI/2)
+  const angles = axes.map((_, i) => (i * 2 * Math.PI) / 6 - Math.PI / 2);
 
   const getPolygonPoints = (ratios) =>
     ratios
       .map((r, i) => {
         const angle = angles[i];
-        const x = center + radius * r * Math.cos(angle);
-        const y = center + radius * r * Math.sin(angle);
+        const x = centerX + radius * r * Math.cos(angle);
+        const y = centerY + radius * r * Math.sin(angle);
         return `${x.toFixed(1)},${y.toFixed(1)}`;
       })
       .join(" ");
 
   return (
-    <div className="radar-chart-card">
-      <div className="card-header-row">
-        <span className="card-title">SO SÁNH UAV (TOP 3 THEO SỐ NHIỆM VỤ)</span>
+    <div className="uav-radar-chart-container-v2">
+      {/* SVG Spider Net & Polygon Overlay */}
+      <div className="radar-svg-box">
+        <svg width="100%" height="240" viewBox={`0 0 ${width} ${height}`}>
+          {/* 4 Concentric Hexagonal Grid Lines */}
+          {[0.25, 0.5, 0.75, 1.0].map((level) => (
+            <polygon
+              key={level}
+              points={getPolygonPoints(Array(6).fill(level))}
+              fill="none"
+              stroke="#1e293b"
+              strokeWidth="1"
+            />
+          ))}
+
+          {/* 6 Radial Grid Spokes */}
+          {angles.map((angle, i) => {
+            const x2 = centerX + radius * Math.cos(angle);
+            const y2 = centerY + radius * Math.sin(angle);
+            return <line key={i} x1={centerX} y1={centerY} x2={x2} y2={y2} stroke="#1e293b" strokeWidth="1" />;
+          })}
+
+          {/* 3 UAV Polygons with Filled Glow & Glowing Vertex Dots */}
+          {series.map((s) => {
+            const pointsStr = getPolygonPoints(s.ratios);
+            return (
+              <g key={s.name}>
+                <polygon points={pointsStr} fill={`${s.color}25`} stroke={s.color} strokeWidth="2" />
+                {s.ratios.map((r, i) => {
+                  const angle = angles[i];
+                  const cx = centerX + radius * r * Math.cos(angle);
+                  const cy = centerY + radius * r * Math.sin(angle);
+                  return (
+                    <circle
+                      key={i}
+                      cx={cx}
+                      cy={cy}
+                      r="3.5"
+                      fill={s.color}
+                      stroke="#0b0f19"
+                      strokeWidth="1.5"
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+
+          {/* 6 Metric Labels around Vertices */}
+          {axes.map((label, i) => {
+            const angle = angles[i];
+            const labelRadius = radius + 18;
+            const lx = centerX + labelRadius * Math.cos(angle);
+            const ly = centerY + labelRadius * Math.sin(angle);
+
+            // Text Alignment & Anchors
+            let textAnchor = "middle";
+            if (i === 1 || i === 2) {
+              textAnchor = "start";
+            } else if (i === 4 || i === 5) {
+              textAnchor = "end";
+            }
+
+            return (
+              <text
+                key={label}
+                x={lx}
+                y={ly}
+                textAnchor={textAnchor}
+                dominantBaseline="middle"
+                fill="#cbd5e1"
+                fontSize="11"
+                fontWeight="500"
+              >
+                {label}
+              </text>
+            );
+          })}
+        </svg>
       </div>
 
-      {series.length === 0 ? (
-        <p className="muted">Chưa có dữ liệu nhiệm vụ để so sánh.</p>
-      ) : (
-        <>
-          <div className="radar-svg-wrapper">
-            <svg viewBox={`0 0 ${size} ${size}`} className="radar-svg">
-              {[0.2, 0.4, 0.6, 0.8, 1.0].map((level) => (
-                <polygon key={level} points={getPolygonPoints(Array(axes.length).fill(level))} fill="none" stroke="#1e293b" strokeWidth="1" />
-              ))}
-              {angles.map((angle, i) => {
-                const x2 = center + radius * Math.cos(angle);
-                const y2 = center + radius * Math.sin(angle);
-                return <line key={i} x1={center} y1={center} x2={x2} y2={y2} stroke="#1e293b" strokeWidth="1" />;
-              })}
-              {series.map((s) => (
-                <polygon key={s.id} points={getPolygonPoints(s.ratios)} fill={`${s.color}26`} stroke={s.color} strokeWidth="1.5" />
-              ))}
-              {axes.map((label, i) => {
-                const angle = angles[i];
-                const labelRadius = radius + 22;
-                const lx = center + labelRadius * Math.cos(angle);
-                const ly = center + labelRadius * Math.sin(angle);
-                return (
-                  <text key={label} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fill="#94a3b8" fontSize="8" fontWeight="600">
-                    {label}
-                  </text>
-                );
-              })}
-            </svg>
+      {/* Bottom Series Legend Bar */}
+      <div className="radar-legend-bar-v2">
+        {series.map((s) => (
+          <div key={s.name} className="legend-chip-v2">
+            <span className="lgd-line-with-dot">
+              <span className="line" style={{ background: s.color }} />
+              <span className="dot" style={{ background: s.color }} />
+              <span className="line" style={{ background: s.color }} />
+            </span>
+            <span className="series-name">{s.name}</span>
           </div>
-
-          <div className="radar-legend">
-            {series.map((s) => (
-              <div key={s.id} className="legend-chip">
-                <span className="chip-dot" style={{ background: s.color }}></span>
-                <span>{s.id}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

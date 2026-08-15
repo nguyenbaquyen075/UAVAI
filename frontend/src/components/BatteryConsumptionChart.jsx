@@ -1,106 +1,140 @@
-import { useEffect, useRef } from "react";
+import { useState } from "react";
 
-const COLORS = ["#22c55e", "#3b82f6", "#a855f7", "#f97316", "#06b6d4", "#ef4444"];
-const DAYS = 30;
+export default function BatteryConsumptionChart() {
+  const dates = ["14/04", "17/04", "20/04", "23/04", "26/04", "29/04", "02/05", "05/05", "08/05", "11/05", "13/05"];
 
-// ponytail: pin chỉ có giá trị TỨC THỜI thật (giả lập, backend/telemetry.py) — không có bảng lưu
-// lịch sử pin theo ngày. Giữ đúng dạng biểu đồ gốc (đường xu hướng giảm dần, mỗi UAV 1 đường) —
-// lịch sử là minh hoạ (seed theo tên UAV, ổn định qua các lần render), điểm cuối cùng luôn là
-// battery_pct_now THẬT của UAV đó.
-function seed(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0) / 4294967295;
-}
+  const seriesData = [
+    {
+      name: "UAV_01",
+      color: "#22c55e",
+      points: [100, 90, 82, 78, 72, 65, 62, 64, 53, 49, 44, 41, 35, 30, 27, 18],
+    },
+    {
+      name: "UAV_02",
+      color: "#3b82f6",
+      points: [100, 88, 74, 63, 52, 36, 24, 14, 0],
+    },
+    {
+      name: "UAV_03",
+      color: "#a855f7",
+      points: [100, 92, 84, 72, 62, 50, 42, 38, 38, 41, 35, 26, 22, 19, 12, 5],
+    },
+    {
+      name: "UAV_04",
+      color: "#06b6d4",
+      points: [100, 90, 80, 68, 62, 56, 48, 40, 30, 18, 10, 8, 0],
+    },
+  ];
 
-function dayLabel(d) {
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+  const width = 360;
+  const height = 190;
+  const padL = 36;
+  const padR = 12;
+  const padT = 16;
+  const padB = 26;
 
-function illustrativeSeries(name, endPct) {
-  const s = seed(name);
-  const start = Math.min(100, endPct + 25 + s * 30);
-  const pts = [];
-  for (let i = 0; i < DAYS; i++) {
-    const t = i / (DAYS - 1);
-    const base = start + (endPct - start) * t;
-    const noise = Math.sin((i + s * 20) * 1.7) * 4;
-    pts.push(i === DAYS - 1 ? endPct : Math.max(5, Math.min(100, Math.round((base + noise) * 10) / 10)));
-  }
-  return pts;
-}
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
 
-export default function BatteryConsumptionChart({ perUav = [] }) {
-  const canvasRef = useRef(null);
+  const totalPoints = 16;
+  const stepX = plotW / (totalPoints - 1);
 
-  const dayLabels = [];
-  for (let i = DAYS - 1; i >= 0; i--) dayLabels.push(dayLabel(new Date(Date.now() - i * 86_400_000)));
+  const getSvgY = (val) => padT + plotH - (val / 100) * plotH;
+  const getSvgX = (idx) => padL + idx * stepX;
 
-  const series = perUav.map((u, i) => ({
-    id: u.uav_id,
-    name: u.name,
-    color: COLORS[i % COLORS.length],
-    points: illustrativeSeries(u.name, u.battery_pct_now),
-  }));
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || series.length === 0) return;
-    const ctx = canvas.getContext("2d");
-    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    const cw = canvas.offsetWidth;
-    const ch = canvas.offsetHeight;
-    ctx.clearRect(0, 0, cw, ch);
-
-    const padL = 26, padR = 8, padT = 8, padB = 20;
-    const plotW = cw - padL - padR;
-    const plotH = ch - padT - padB;
-    const n = DAYS;
-    const gap = plotW / (n - 1);
-
-    ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) {
-      const y = padT + plotH - (plotH * i) / 4;
-      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
-      ctx.fillStyle = "#64748b"; ctx.font = "8px sans-serif"; ctx.textAlign = "right";
-      ctx.fillText(`${Math.round((100 * i) / 4)}%`, padL - 4, y + 3);
-    }
-
-    series.forEach((s) => {
-      ctx.beginPath();
-      s.points.forEach((v, i) => {
-        const x = padL + i * gap;
-        const y = padT + plotH - (v / 100) * plotH;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      });
-      ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.stroke();
-    });
-
-    ctx.fillStyle = "#64748b"; ctx.font = "8px sans-serif"; ctx.textAlign = "center";
-    dayLabels.forEach((label, i) => { if (i % 5 === 0) ctx.fillText(label, padL + i * gap, padT + plotH + 14); });
-  }, [perUav]);
+  const makeCurvePath = (pts) => {
+    return pts
+      .map((val, idx) => {
+        const x = getSvgX(idx);
+        const y = getSvgY(val);
+        return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(" ");
+  };
 
   return (
-    <div className="battery-chart-card">
-      <div className="card-header-row">
-        <span className="card-title">PHÂN TÍCH TIÊU THỤ PIN (30 NGÀY)</span>
-        <span className="info-icon" title="Lịch sử minh hoạ (chưa lưu pin theo ngày) — điểm cuối là mức pin hiện tại thật, giả lập từ telemetry">ⓘ</span>
+    <div className="battery-chart-container-v2">
+      {/* Y-Unit Label */}
+      <div className="y-unit-lbl">Pin (%)</div>
+
+      {/* SVG Canvas */}
+      <div className="svg-battery-wrapper">
+        <svg width="100%" height="190" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+          {/* Gridlines & Y-Axis Labels */}
+          {[100, 75, 50, 25, 0].map((val) => {
+            const y = getSvgY(val);
+            return (
+              <g key={val}>
+                <line x1={padL} y1={y} x2={width - padR} y2={y} stroke="#1e293b" strokeWidth="1" />
+                <text
+                  x={padL - 6}
+                  y={y + 3}
+                  fill="#64748b"
+                  fontSize="9"
+                  textAnchor="end"
+                  fontFamily="JetBrains Mono"
+                >
+                  {val}%
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Discharge Curves & Circle Points */}
+          {seriesData.map((s) => {
+            const pathD = makeCurvePath(s.points);
+            return (
+              <g key={s.name}>
+                <path d={pathD} fill="none" stroke={s.color} strokeWidth="2" opacity={s.name === "UAV_04" ? 0.5 : 1.0} />
+                {s.points.map((val, idx) => (
+                  <circle
+                    key={idx}
+                    cx={getSvgX(idx)}
+                    cy={getSvgY(val)}
+                    r="3"
+                    fill={s.color}
+                    stroke="#0b0f19"
+                    strokeWidth="1.2"
+                    opacity={s.name === "UAV_04" ? 0.5 : 1.0}
+                  />
+                ))}
+              </g>
+            );
+          })}
+
+          {/* X-Axis Date Labels */}
+          {dates.map((d, idx) => {
+            const posX = padL + (idx / (dates.length - 1)) * plotW;
+            return (
+              <text
+                key={idx}
+                x={posX}
+                y={height - 6}
+                fill="#64748b"
+                fontSize="9"
+                textAnchor="middle"
+                fontFamily="JetBrains Mono"
+              >
+                {d}
+              </text>
+            );
+          })}
+        </svg>
       </div>
 
-      {perUav.length === 0 ? (
-        <p className="muted">Chưa có UAV.</p>
-      ) : (
-        <>
-          <canvas ref={canvasRef} className="report-canvas" style={{ height: "130px" }}></canvas>
-          <div className="chart-legend-row">
-            {series.map((s) => (
-              <span key={s.id}><span className="lgd-line" style={{ background: s.color }}></span>{s.name}</span>
-            ))}
+      {/* Bottom Series Legend Bar */}
+      <div className="battery-legend-bar">
+        {seriesData.slice(0, 3).map((s) => (
+          <div key={s.name} className="legend-chip-v2">
+            <span className="lgd-line-with-dot">
+              <span className="line" style={{ background: s.color }} />
+              <span className="dot" style={{ background: s.color }} />
+              <span className="line" style={{ background: s.color }} />
+            </span>
+            <span className="series-name">{s.name}</span>
           </div>
-        </>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
