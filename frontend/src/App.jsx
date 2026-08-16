@@ -148,7 +148,31 @@ export default function App() {
               <Menu size={18} />
             </button>
             <div className="header-page-title">
-              <span className="title-text">{tab === "uavs" ? "UAV" : "THEO DÕI MỤC TIÊU"}</span>
+              <span className="title-text">
+                {tab === "settings"
+                  ? "CÀI ĐẶT HỆ THỐNG"
+                  : tab === "map"
+                  ? "BẢN ĐỒ TÁC CHIẾN"
+                  : tab === "uavs"
+                  ? "DANH SÁCH UAV"
+                  : tab === "overview"
+                  ? "TỔNG QUAN"
+                  : tab === "missions"
+                  ? "NHIỆM VỤ"
+                  : tab === "tracking"
+                  ? "THEO DÕI MỤC TIÊU"
+                  : tab === "live"
+                  ? "THEO DÕI TRỰC TIẾP"
+                  : tab === "analytics"
+                  ? "PHÂN TÍCH"
+                  : tab === "notes"
+                  ? "GHI CHÉP"
+                  : tab === "logs"
+                  ? "CẢNH BÁO"
+                  : tab === "reports"
+                  ? "BÁO CÁO"
+                  : "UAV CONTROL"}
+              </span>
               <span className="breadcrumb-sub-text">Trang chủ &gt; {tab.toUpperCase()}</span>
             </div>
           </div>

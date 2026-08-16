@@ -1,505 +1,719 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  Settings,
-  Crosshair,
-  Wifi,
-  Battery,
-  User,
-  CheckCircle2,
-  Plane,
-  Bell,
-  Database,
-  Plug,
-  ScrollText,
-  Users,
   Info,
-  Palette,
+  Sliders,
   Map,
   Ruler,
   Clock,
   Globe,
   Shield,
   Archive,
-  Upload,
-  Pencil,
+  ChevronRight,
+  RotateCw,
+  User,
+  CheckCircle2,
+  Save,
+  X,
+  Sun,
+  Moon,
+  Monitor,
+  Check,
+  Search,
+  Bell,
+  Plane,
+  Eye,
+  Download,
 } from "lucide-react";
-import { getLogs, getSettings, listUAVs, updateSettings, updateUAV } from "../api";
+import { getSettings, updateSettings } from "../api";
+import MapSettingsView from "../components/MapSettingsView";
+import SecuritySettingsView from "../components/SecuritySettingsView";
+import VideoDownloadSettingsView from "../components/VideoDownloadSettingsView";
 
-const LEFT_SECTIONS = [
+const TOP_NAV_TABS = [
   { key: "info", label: "Thông tin hệ thống", Icon: Info },
-  { key: "interface", label: "Giao diện", Icon: Palette },
+  { key: "interface", label: "Giao diện", Icon: Sliders },
   { key: "map", label: "Bản đồ", Icon: Map },
-  { key: "units", label: "Đơn vị đo lường", Icon: Ruler },
-  { key: "time", label: "Thời gian", Icon: Clock },
-  { key: "language", label: "Ngôn ngữ", Icon: Globe },
   { key: "security", label: "Bảo mật", Icon: Shield },
-  { key: "backup", label: "Sao lưu & Khôi phục", Icon: Archive },
+  { key: "download", label: "Tải xuống video", Icon: Download },
 ];
 
-const TOP_TABS = [
-  "Cài đặt chung",
-  "UAV & Thiết bị",
-  "Người dùng & Phân quyền",
-  "Thông báo",
-  "Dữ liệu & Lưu trữ",
-  "Tích hợp",
-  "Nhật ký hệ thống",
+const ACCENT_COLORS = [
+  { key: "green", hex: "#22c55e", label: "Xanh lá" },
+  { key: "blue", hex: "#3b82f6", label: "Xanh dương" },
+  { key: "purple", hex: "#a855f7", label: "Tím" },
+  { key: "orange", hex: "#f97316", label: "Cam" },
+  { key: "red", hex: "#ef4444", label: "Đỏ" },
 ];
-
-const CLASS_LABEL = { person: "Người", car: "Ô tô", motorcycle: "Xe máy", bus: "Xe buýt", truck: "Xe tải" };
-const ALL_CLASSES = Object.keys(CLASS_LABEL);
-const SEVERITY_LABEL = { red: "Nguy hiểm", yellow: "Cảnh báo" };
 
 export default function SettingsPage() {
-  const [topTab, setTopTab] = useState("Cài đặt chung");
-  const [currentTime, setCurrentTime] = useState("");
-
-  useEffect(() => {
-    const update = () => {
-      const now = new Date();
-      const t = now.toTimeString().slice(0, 8);
-      const d = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
-      setCurrentTime(`${t} ${d}`);
-    };
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <div className="settings-page-layout">
-
-      <div className="settings-top-tabs">
-        {TOP_TABS.map((t) => (
-          <button key={t} className={`stab ${topTab === t ? "active" : ""}`} onClick={() => setTopTab(t)}>{t}</button>
-        ))}
-      </div>
-
-      {topTab === "Cài đặt chung" && <GeneralSettingsTab />}
-      {topTab === "UAV & Thiết bị" && <UavDeviceTab />}
-      {topTab === "Người dùng & Phân quyền" && <UsersTab />}
-      {topTab === "Nhật ký hệ thống" && <SystemLogTab />}
-      {["Thông báo", "Dữ liệu & Lưu trữ", "Tích hợp"].includes(topTab) && <NotBuiltTab name={topTab} />}
-    </div>
-  );
-}
-
-// --- Cài đặt chung: menu con bên trái + form theo mục đang chọn ---
-function GeneralSettingsTab() {
+  const [activeTab, setActiveTab] = useState("info");
   const [settings, setSettings] = useState(null);
-  const [saved, setSaved] = useState(false);
-  const [counts, setCounts] = useState({ uavs: 0, alerts: 0 });
-  const [section, setSection] = useState("info");
-  const [quickToggles, setQuickToggles] = useState({
-    darkMode: true,
-    autoSaveNotes: true,
-    mapGrid: true,
-    alertSound: true,
-    confirmDelete: true,
+  const [editingRow, setEditingRow] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const [savedMessage, setSavedMessage] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState("13/05/2024 10:30:45");
+
+  // System Info State
+  const [systemData, setSystemData] = useState({
+    systemName: "UAV CONTROL - Hệ thống quản lý UAV",
+    description: "Hệ thống quản lý và giám sát UAV phục vụ cho các nhiệm vụ giám sát, tuần tra và khảo sát.",
+    version: "v2.4.1",
+    server: "UAV-SERVER-01",
+    ipAddress: "192.168.1.10",
+    storageUsed: 256,
+    storageTotal: 1024,
+    uptime: "15 ngày 8 giờ 32 phút",
+    uavCount: 18,
+    userCount: 24,
+    missionCount: 156,
+  });
+
+  // Interface Settings State (Exact match screenshot)
+  const [colorMode, setColorMode] = useState("dark"); // "light" | "dark" | "auto"
+  const [accentColor, setAccentColor] = useState("green"); // "green" | "blue" | "purple" | "orange" | "red"
+  const [interfaceToggles, setInterfaceToggles] = useState({
+    showNotifications: true,
+    showTooltips: true,
+    enableAnimations: true,
+    collapseSidebar: false,
+    showStatusBar: true,
+  });
+  const [densityMode, setDensityMode] = useState("medium"); // "low" | "medium" | "high"
+
+  // Other Tabs State
+  const [mapData, setMapData] = useState({
+    defaultMap: "Bản đồ vệ tinh (Satellite)",
+    coordinateSystem: "WGS-84 / UTM Zone 48N",
+    gridOverlay: "Hiển thị lưới tọa độ",
+    autoCenterUAV: "Có (Mỗi 5 giây)",
+    defaultZoom: "Mức 14",
+  });
+
+  const [unitsData, setUnitsData] = useState({
+    distance: "Mét / Kilômét (m/km)",
+    speed: "Kilômét / giờ (km/h)",
+    altitude: "Mét so với mực nước biển (MSL)",
+    area: "Hécta / Kilômét vuông (ha/km²)",
+    temperature: "Độ C (°C)",
+  });
+
+  const [timeData, setTimeData] = useState({
+    timezone: "(UTC+07:00) Bangkok, Hanoi, Jakarta",
+    dateFormat: "DD/MM/YYYY",
+    timeFormat: "24 giờ (HH:mm:ss)",
+    ntpServer: "time.google.com (Đã đồng bộ)",
+  });
+
+  const [languageData, setLanguageData] = useState({
+    appLanguage: "Tiếng Việt (Vietnamese)",
+    voiceAlerts: "Tiếng Việt (Nữ miền Bắc)",
+    locale: "vi_VN",
+  });
+
+  const [securityData, setSecurityData] = useState({
+    twoFactor: "Đã bật (2FA)",
+    sessionTimeout: "30 phút",
+    failedAttempts: "Tối đa 5 lần",
+    encryption: "AES-256 GCM",
+  });
+
+  const [backupData, setBackupData] = useState({
+    lastBackup: "13/05/2024 02:00:00 (Tự động)",
+    autoBackupFreq: "Hằng ngày vào 02:00 AM",
+    backupLocation: "Máy chủ nội bộ + Cloud S3",
+    retention: "30 bản sao gần nhất",
   });
 
   useEffect(() => {
-    getSettings().then(setSettings);
-    Promise.all([listUAVs(), getLogs()]).then(([uavs, logs]) => {
-      setCounts({ uavs: Array.isArray(uavs) ? uavs.length : 0, alerts: Array.isArray(logs) ? logs.length : 0 });
+    getSettings().then((res) => {
+      if (res) setSettings(res);
     });
   }, []);
 
-  if (!settings) return <div className="settings-body"><p className="muted">Đang tải cài đặt...</p></div>;
+  const handleRefresh = () => {
+    const now = new Date();
+    const d = String(now.getDate()).padStart(2, "0");
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const y = now.getFullYear();
+    const time = now.toTimeString().split(" ")[0];
+    setLastUpdated(`${d}/${m}/${y} ${time}`);
+    setSavedMessage("Đã cập nhật dữ liệu mới nhất!");
+    setTimeout(() => setSavedMessage(false), 2000);
+  };
 
-  function patch(field, value) {
-    setSettings((s) => ({ ...s, [field]: value }));
-  }
-  function toggleClass(cls) {
-    const enabled = settings.enabled_classes.includes(cls);
-    patch("enabled_classes", enabled ? settings.enabled_classes.filter((c) => c !== cls) : [...settings.enabled_classes, cls]);
-  }
-  function toggleQuick(key) {
-    setQuickToggles((q) => ({ ...q, [key]: !q[key] }));
-  }
-  async function handleSave() {
-    const result = await updateSettings({
-      alert_threshold_m: Number(settings.alert_threshold_m),
-      warning_threshold_m: Number(settings.warning_threshold_m),
-      max_acceptable_delay: Number(settings.max_acceptable_delay),
-      enabled_classes: settings.enabled_classes,
-      system_name: settings.system_name,
-      system_description: settings.system_description,
-      timezone: settings.timezone,
-      date_format: settings.date_format,
-      time_format: settings.time_format,
-      distance_unit: settings.distance_unit,
-      speed_unit: settings.speed_unit,
-    });
-    setSettings(result);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  }
+  const handleStartEdit = (key, val) => {
+    setEditingRow(key);
+    setEditValue(val);
+  };
+
+  const handleSaveEdit = (category, key) => {
+    if (category === "system") {
+      setSystemData((prev) => ({ ...prev, [key]: editValue }));
+    }
+    setEditingRow(null);
+    setSavedMessage("Lưu thay đổi thành công!");
+    setTimeout(() => setSavedMessage(false), 2000);
+  };
+
+  const handleToggleInterface = (key) => {
+    setInterfaceToggles((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleSaveInterfaceSettings = () => {
+    setSavedMessage("Lưu cài đặt giao diện thành công!");
+    setTimeout(() => setSavedMessage(false), 2000);
+  };
+
+  const storagePercentage = (
+    (systemData.storageUsed / systemData.storageTotal) *
+    100
+  ).toFixed(1);
+
+  // Selected accent color hex helper
+  const activeAccentHex =
+    ACCENT_COLORS.find((c) => c.key === accentColor)?.hex || "#22c55e";
 
   return (
-    <div className="settings-body">
-      <nav className="settings-left-menu">
-        {LEFT_SECTIONS.map((s) => (
-          <button key={s.key} className={`sleft-item ${section === s.key ? "active" : ""}`} onClick={() => setSection(s.key)}>
-            <span className="sleft-icon"><s.Icon size={14} /></span>
-            {s.label}
-          </button>
-        ))}
-      </nav>
+    <div className="sys-settings-layout-topbar">
+      {/* TOP HORIZONTAL NAVIGATION TABS */}
+      <div className="sys-top-tabs-bar">
+        <div className="sys-top-tabs-list">
+          {TOP_NAV_TABS.map((item) => {
+            const Icon = item.Icon;
+            const isActive = activeTab === item.key;
+            return (
+              <button
+                key={item.key}
+                className={`sys-top-tab-btn ${isActive ? "active" : ""}`}
+                onClick={() => setActiveTab(item.key)}
+              >
+                <Icon size={16} className="sys-top-tab-icon" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-      <div className="settings-center-content">
-        {section === "info" && (
-          <section className="settings-section">
-            <h2 className="s-section-title">THÔNG TIN HỆ THỐNG</h2>
-            <p className="s-section-desc">Cấu hình các thông tin cơ bản của hệ thống — lưu thật vào backend/settings.json.</p>
-            <div className="settings-form">
-              <div className="sf-row">
-                <label className="sf-label">Tên hệ thống</label>
-                <input className="sf-input" value={settings.system_name} onChange={(e) => patch("system_name", e.target.value)} />
+      {/* MAIN CONTENT CONTAINER */}
+      <main className="sys-settings-main-full">
+        {/* HEADER TITLE (HIDE FOR MAP, SECURITY, DOWNLOAD TABS AS THEY HAVE CUSTOM HEADERS) */}
+        {activeTab !== "map" && activeTab !== "security" && activeTab !== "download" && activeTab !== "backup" && (
+          <div className="sys-main-header">
+            <h1 className="sys-header-title font-sans">
+              {activeTab === "info" && "Thông tin hệ thống"}
+              {activeTab === "interface" && "Giao diện"}
+            </h1>
+            <p className="sys-header-subtitle">
+              {activeTab === "info" && "Cấu hình các thông tin cơ bản của hệ thống"}
+              {activeTab === "interface" && "Tùy chỉnh giao diện hiển thị của hệ thống"}
+            </p>
+          </div>
+        )}
+
+        {savedMessage && (
+          <div className="sys-toast-alert">
+            <CheckCircle2 size={16} />
+            <span>{savedMessage}</span>
+          </div>
+        )}
+
+        {/* TAB 1: THÔNG TIN HỆ THỐNG */}
+        {activeTab === "info" && (
+          <div className="sys-info-card-container">
+            <div className="sys-row-item">
+              <span className="sys-row-label">Tên hệ thống</span>
+              <div className="sys-row-value-group">
+                {editingRow === "systemName" ? (
+                  <div className="sys-inline-edit font-sans">
+                    <input
+                      type="text"
+                      className="sys-edit-input"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                    />
+                    <button
+                      className="sys-btn-icon save"
+                      onClick={() => handleSaveEdit("system", "systemName")}
+                    >
+                      <Save size={14} />
+                    </button>
+                    <button
+                      className="sys-btn-icon cancel"
+                      onClick={() => setEditingRow(null)}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <span
+                    className="sys-row-value editable"
+                    onClick={() => handleStartEdit("systemName", systemData.systemName)}
+                  >
+                    {systemData.systemName}
+                  </span>
+                )}
               </div>
-              <div className="sf-row">
-                <label className="sf-label">Mô tả</label>
-                <textarea className="sf-textarea" value={settings.system_description} onChange={(e) => patch("system_description", e.target.value)} />
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Mô tả</span>
+              <div className="sys-row-value-group">
+                {editingRow === "description" ? (
+                  <div className="sys-inline-edit font-sans">
+                    <textarea
+                      className="sys-edit-textarea"
+                      value={editValue}
+                      rows={2}
+                      onChange={(e) => setEditValue(e.target.value)}
+                    />
+                    <button
+                      className="sys-btn-icon save"
+                      onClick={() => handleSaveEdit("system", "description")}
+                    >
+                      <Save size={14} />
+                    </button>
+                    <button
+                      className="sys-btn-icon cancel"
+                      onClick={() => setEditingRow(null)}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <span
+                    className="sys-row-value editable"
+                    onClick={() => handleStartEdit("description", systemData.description)}
+                  >
+                    {systemData.description}
+                  </span>
+                )}
               </div>
-              <div className="sf-row">
-                <label className="sf-label">Logo hệ thống</label>
-                <div className="logo-upload-area">
-                  <div className="logo-preview"><Plane size={24} color="#4ade80" /></div>
-                  <div className="logo-actions">
-                    <button type="button" className="btn-upload-logo" disabled title="Chưa hỗ trợ tải logo tuỳ chỉnh"><Upload size={12} /> Thay đổi logo</button>
-                    <span className="logo-hint">Định dạng: PNG, JPG (không quá 2MB)</span>
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Phiên bản</span>
+              <div className="sys-row-value-group">
+                <span className="sys-row-value font-mono">{systemData.version}</span>
+                <ChevronRight size={18} className="sys-chevron-icon" />
+              </div>
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Máy chủ</span>
+              <div className="sys-row-value-group">
+                <span className="sys-row-value font-mono">{systemData.server}</span>
+                <ChevronRight size={18} className="sys-chevron-icon" />
+              </div>
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Địa chỉ IP</span>
+              <div className="sys-row-value-group">
+                <span className="sys-row-value font-mono">{systemData.ipAddress}</span>
+                <ChevronRight size={18} className="sys-chevron-icon" />
+              </div>
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Dung lượng lưu trữ</span>
+              <div className="sys-row-value-group storage-flex-group">
+                <div className="sys-storage-bar-wrapper">
+                  <div
+                    className="sys-storage-bar-fill"
+                    style={{ width: `${storagePercentage}%` }}
+                  />
+                </div>
+                <span className="sys-row-value font-mono storage-text">
+                  {systemData.storageUsed} GB / {systemData.storageTotal / 1024} TB{" "}
+                  <span className="green-percentage">({storagePercentage}%)</span>
+                </span>
+                <ChevronRight size={18} className="sys-chevron-icon" />
+              </div>
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Thời gian hoạt động</span>
+              <div className="sys-row-value-group">
+                <span className="sys-row-value font-mono">{systemData.uptime}</span>
+                <ChevronRight size={18} className="sys-chevron-icon" />
+              </div>
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Số lượng UAV</span>
+              <div className="sys-row-value-group">
+                <span className="sys-row-value font-mono">{systemData.uavCount}</span>
+                <ChevronRight size={18} className="sys-chevron-icon" />
+              </div>
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Số người dùng</span>
+              <div className="sys-row-value-group">
+                <span className="sys-row-value font-mono">{systemData.userCount}</span>
+                <ChevronRight size={18} className="sys-chevron-icon" />
+              </div>
+            </div>
+
+            <div className="sys-row-item">
+              <span className="sys-row-label">Số nhiệm vụ</span>
+              <div className="sys-row-value-group">
+                <span className="sys-row-value font-mono">{systemData.missionCount}</span>
+                <ChevronRight size={18} className="sys-chevron-icon" />
+              </div>
+            </div>
+
+            {/* FOOTER ROW */}
+            <div className="sys-card-footer">
+              <div className="sys-footer-left">
+                <RotateCw
+                  size={15}
+                  className="sys-sync-icon"
+                  onClick={handleRefresh}
+                  title="Tải lại dữ liệu"
+                />
+                <span className="sys-footer-label">Cập nhật lần cuối:</span>
+              </div>
+              <div className="sys-footer-right">
+                <span className="sys-footer-timestamp font-mono">{lastUpdated}</span>
+                <RotateCw
+                  size={15}
+                  className="sys-sync-icon"
+                  onClick={handleRefresh}
+                  title="Làm mới"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: GIAO DIỆN (EXACT MATCH SCREENSHOT DESIGN) */}
+        {activeTab === "interface" && (
+          <div className="ui-settings-grid font-sans">
+            {/* LEFT COLUMN: OPTIONS & TOGGLES */}
+            <div className="ui-settings-left-col">
+              {/* SECTION 1: CHẾ ĐỘ MÀU */}
+              <div className="ui-config-section">
+                <h3 className="ui-section-title">Chế độ màu</h3>
+                <div className="ui-cards-2col">
+                  {/* Sáng */}
+                  <div
+                    className={`ui-mode-card ${colorMode === "light" ? "selected" : ""}`}
+                    onClick={() => setColorMode("light")}
+                  >
+                    {colorMode === "light" && (
+                      <div className="ui-card-badge">
+                        <Check size={12} color="#ffffff" />
+                      </div>
+                    )}
+                    <Sun size={24} className="ui-mode-icon" />
+                    <span className="ui-mode-title">Sáng</span>
+                    <span className="ui-mode-sub">Giao diện sáng</span>
+                  </div>
+
+                  {/* Tối */}
+                  <div
+                    className={`ui-mode-card ${colorMode === "dark" ? "selected" : ""}`}
+                    onClick={() => setColorMode("dark")}
+                  >
+                    {colorMode === "dark" && (
+                      <div className="ui-card-badge">
+                        <Check size={12} color="#ffffff" />
+                      </div>
+                    )}
+                    <Moon size={24} className="ui-mode-icon" />
+                    <span className="ui-mode-title">Tối</span>
+                    <span className="ui-mode-sub">Giao diện tối</span>
                   </div>
                 </div>
               </div>
-              <div className="sf-save-row">
-                <button className={`btn-save-settings ${saved ? "saved" : ""}`} onClick={handleSave}>
-                  {saved ? <><CheckCircle2 size={14} /> Đã lưu!</> : "Lưu thay đổi"}
+
+              {/* SECTION 2: MÀU CHỦ ĐẠO */}
+              <div className="ui-config-section">
+                <h3 className="ui-section-title">Màu chủ đạo</h3>
+                <div className="ui-colors-row">
+                  {ACCENT_COLORS.map((c) => {
+                    const isSelected = accentColor === c.key;
+                    return (
+                      <div
+                        key={c.key}
+                        className={`ui-color-swatch-box ${isSelected ? "selected" : ""}`}
+                        onClick={() => setAccentColor(c.key)}
+                        style={{ "--swatch-color": c.hex }}
+                      >
+                        <div
+                          className="ui-color-swatch-inner"
+                          style={{ backgroundColor: c.hex }}
+                        >
+                          {isSelected && <Check size={16} color="#ffffff" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* SECTION 3: HIỂN THỊ (TOGGLES) */}
+              <div className="ui-config-section">
+                <h3 className="ui-section-title">Hiển thị</h3>
+                <div className="ui-toggles-list">
+                  <div className="ui-toggle-row">
+                    <span className="ui-toggle-label">Hiển thị thông báo</span>
+                    <button
+                      className={`ui-switch ${interfaceToggles.showNotifications ? "on" : ""}`}
+                      onClick={() => handleToggleInterface("showNotifications")}
+                    >
+                      <span className="ui-switch-knob" />
+                    </button>
+                  </div>
+
+                  <div className="ui-toggle-row">
+                    <span className="ui-toggle-label">Hiển thị tooltip</span>
+                    <button
+                      className={`ui-switch ${interfaceToggles.showTooltips ? "on" : ""}`}
+                      onClick={() => handleToggleInterface("showTooltips")}
+                    >
+                      <span className="ui-switch-knob" />
+                    </button>
+                  </div>
+
+                  <div className="ui-toggle-row">
+                    <span className="ui-toggle-label">Hiển thị hiệu ứng chuyển động</span>
+                    <button
+                      className={`ui-switch ${interfaceToggles.enableAnimations ? "on" : ""}`}
+                      onClick={() => handleToggleInterface("enableAnimations")}
+                    >
+                      <span className="ui-switch-knob" />
+                    </button>
+                  </div>
+
+                  <div className="ui-toggle-row">
+                    <span className="ui-toggle-label">Thu gọn thanh bên</span>
+                    <button
+                      className={`ui-switch ${interfaceToggles.collapseSidebar ? "on" : ""}`}
+                      onClick={() => handleToggleInterface("collapseSidebar")}
+                    >
+                      <span className="ui-switch-knob" />
+                    </button>
+                  </div>
+
+                  <div className="ui-toggle-row">
+                    <span className="ui-toggle-label">Hiển thị thanh trạng thái</span>
+                    <button
+                      className={`ui-switch ${interfaceToggles.showStatusBar ? "on" : ""}`}
+                      onClick={() => handleToggleInterface("showStatusBar")}
+                    >
+                      <span className="ui-switch-knob" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 4: MẬT ĐỘ HIỂN THỊ */}
+              <div className="ui-config-section">
+                <h3 className="ui-section-title">Mật độ hiển thị</h3>
+                <div className="ui-cards-3col">
+                  {/* Thấp */}
+                  <div
+                    className={`ui-mode-card ${densityMode === "low" ? "selected" : ""}`}
+                    onClick={() => setDensityMode("low")}
+                  >
+                    {densityMode === "low" && (
+                      <div className="ui-card-badge">
+                        <Check size={12} color="#ffffff" />
+                      </div>
+                    )}
+                    <span className="ui-mode-title">Thấp</span>
+                    <span className="ui-mode-sub">Rộng rãi</span>
+                  </div>
+
+                  {/* Trung bình */}
+                  <div
+                    className={`ui-mode-card ${densityMode === "medium" ? "selected" : ""}`}
+                    onClick={() => setDensityMode("medium")}
+                  >
+                    {densityMode === "medium" && (
+                      <div className="ui-card-badge">
+                        <Check size={12} color="#ffffff" />
+                      </div>
+                    )}
+                    <span className="ui-mode-title">Trung bình</span>
+                    <span className="ui-mode-sub">Đề xuất</span>
+                  </div>
+
+                  {/* Cao */}
+                  <div
+                    className={`ui-mode-card ${densityMode === "high" ? "selected" : ""}`}
+                    onClick={() => setDensityMode("high")}
+                  >
+                    {densityMode === "high" && (
+                      <div className="ui-card-badge">
+                        <Check size={12} color="#ffffff" />
+                      </div>
+                    )}
+                    <span className="ui-mode-title">Cao</span>
+                    <span className="ui-mode-sub">Thu gọn</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: PREVIEW MOCKUP & INFO CARD */}
+            <div className="ui-settings-right-col">
+              {/* LIVE PREVIEW CARD */}
+              <div className="ui-preview-card">
+                <h3 className="ui-card-header-title">Xem trước</h3>
+
+                {/* PREVIEW CONTAINER MOCKUP */}
+                <div className="ui-mockup-frame">
+                  {/* MOCKUP HEADER */}
+                  <div className="ui-mockup-header">
+                    <div className="ui-mockup-brand">
+                      <Plane size={14} style={{ color: activeAccentHex }} />
+                      <span className="ui-mockup-brand-title">
+                        UAV <strong style={{ color: activeAccentHex }}>CONTROL</strong>
+                      </span>
+                    </div>
+                    <div className="ui-mockup-header-icons">
+                      <Search size={12} color="#94a3b8" />
+                      <Bell size={12} color="#94a3b8" />
+                      <User size={12} color="#94a3b8" />
+                    </div>
+                  </div>
+
+                  {/* MOCKUP BODY */}
+                  <div className="ui-mockup-body">
+                    {/* LEFT MINI NAV */}
+                    <div className="ui-mockup-sidenav">
+                      <div className="mockup-icon active" style={{ color: activeAccentHex }}>
+                        <Info size={11} />
+                      </div>
+                      <div className="mockup-icon"><Sliders size={11} /></div>
+                      <div className="mockup-icon"><Map size={11} /></div>
+                      <div className="mockup-icon"><Clock size={11} /></div>
+                      <div className="mockup-icon"><Shield size={11} /></div>
+                      <div className="mockup-icon"><Archive size={11} /></div>
+                    </div>
+
+                    {/* MAIN MOCKUP CONTENT */}
+                    <div className="ui-mockup-content">
+                      {/* TOP STATS ROW */}
+                      <div className="ui-mockup-stats-row">
+                        <div className="mockup-stat-card">
+                          <Plane size={14} color="#60a5fa" />
+                          <div className="stat-stack">
+                            <span className="val">18</span>
+                            <span className="lbl">Tổng số UAV</span>
+                          </div>
+                        </div>
+
+                        <div className="mockup-stat-card">
+                          <RotateCw size={14} style={{ color: activeAccentHex }} />
+                          <div className="stat-stack">
+                            <span className="val">8</span>
+                            <span className="lbl">Đang hoạt động</span>
+                          </div>
+                        </div>
+
+                        <div className="mockup-stat-card danger">
+                          <X size={14} color="#ef4444" />
+                          <div className="stat-stack">
+                            <span className="val">5</span>
+                            <span className="lbl">Không khả dụng</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* MAP & DETAIL SPLIT */}
+                      <div className="ui-mockup-map-split">
+                        <div className="mockup-map-box">
+                          <div className="mockup-radar-circle">
+                            <Plane
+                              size={12}
+                              className="radar-uav"
+                              style={{ color: activeAccentHex }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mockup-uav-detail-card">
+                          <div className="detail-header">
+                            <span className="uav-name">
+                              <Plane size={11} style={{ color: activeAccentHex }} /> UAV-01 - Eagle Pro
+                            </span>
+                          </div>
+                          <div className="detail-field">
+                            <span className="k">Status</span>
+                            <span className="v" style={{ color: activeAccentHex }}>
+                              Đang hoạt động
+                            </span>
+                          </div>
+                          <div className="detail-field">
+                            <span className="k">Pin</span>
+                            <span className="v font-mono">78%</span>
+                          </div>
+                          <div className="detail-field">
+                            <span className="k">Vị trí</span>
+                            <span className="v">Khu vực A - Điểm 12</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* RECENT ACTIVITY TABLE */}
+                      <div className="ui-mockup-table-box">
+                        <div className="table-header-lbl">Hoạt động gần đây</div>
+                        <div className="table-row">
+                          <span>UAV-03 - SkyEye 4K</span>
+                          <span>Tuần tra khu vực B</span>
+                          <span style={{ color: activeAccentHex }}>Hoàn thành</span>
+                          <span className="font-mono">10:25 AM</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* INFORMATION CARD */}
+              <div className="ui-info-card font-sans">
+                <div className="info-title-row">
+                  <Info size={16} className="info-icon" />
+                  <span className="info-title font-bold">Thông tin</span>
+                </div>
+                <p className="info-text">
+                  Các tùy chỉnh giao diện sẽ được lưu và áp dụng ngay lập tức trên tài khoản
+                  của bạn.
+                </p>
+              </div>
+
+              {/* BOTTOM SAVE BUTTON */}
+              <div className="ui-save-btn-row">
+                <button
+                  className="ui-btn-save-outline"
+                  onClick={handleSaveInterfaceSettings}
+                >
+                  <Save size={15} />
+                  <span>Lưu thay đổi</span>
                 </button>
               </div>
             </div>
-          </section>
-        )}
-
-        {section === "interface" && (
-          <section className="settings-section">
-            <h2 className="s-section-title">GIAO DIỆN</h2>
-            <p className="s-section-desc">Hệ thống hiện chỉ hỗ trợ giao diện tối (dark mode).</p>
-            <div className="quick-settings-list">
-              <div className="qs-row">
-                <span className="qs-label">Chế độ tối</span>
-                <button className={`toggle-switch ${quickToggles.darkMode ? "on" : ""}`} disabled title="Hệ thống chỉ có giao diện tối"><span className="toggle-knob" /></button>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {section === "map" && (
-          <section className="settings-section">
-            <h2 className="s-section-title">BẢN ĐỒ</h2>
-            <p className="s-section-desc">Tuỳ chỉnh hiển thị mặc định cho trang Bản đồ.</p>
-            <div className="quick-settings-list">
-              <div className="qs-row">
-                <span className="qs-label">Hiển thị lưới trên bản đồ</span>
-                <button className={`toggle-switch ${quickToggles.mapGrid ? "on" : ""}`} onClick={() => toggleQuick("mapGrid")}><span className="toggle-knob" /></button>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {section === "units" && (
-          <section className="settings-section">
-            <h2 className="s-section-title">ĐƠN VỊ ĐO LƯỜNG</h2>
-            <p className="s-section-desc">Áp dụng cho hiển thị khoảng cách/tốc độ trên toàn hệ thống.</p>
-            <div className="settings-form">
-              <div className="sf-row-double">
-                <div className="sf-half">
-                  <label className="sf-label">Đơn vị khoảng cách</label>
-                  <select className="sf-select" value={settings.distance_unit} onChange={(e) => patch("distance_unit", e.target.value)}>
-                    <option value="m">Mét (m)</option>
-                    <option value="ft">Feet (ft)</option>
-                  </select>
-                </div>
-                <div className="sf-half">
-                  <label className="sf-label">Đơn vị tốc độ</label>
-                  <select className="sf-select" value={settings.speed_unit} onChange={(e) => patch("speed_unit", e.target.value)}>
-                    <option value="km/h">km/h</option>
-                    <option value="m/s">m/s</option>
-                  </select>
-                </div>
-              </div>
-              <div className="sf-save-row">
-                <button className={`btn-save-settings ${saved ? "saved" : ""}`} onClick={handleSave}>
-                  {saved ? <><CheckCircle2 size={14} /> Đã lưu!</> : "Lưu thay đổi"}
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {section === "time" && (
-          <section className="settings-section">
-            <h2 className="s-section-title">THỜI GIAN</h2>
-            <p className="s-section-desc">Múi giờ và định dạng ngày/giờ hiển thị.</p>
-            <div className="settings-form">
-              <div className="sf-row">
-                <label className="sf-label">Múi giờ</label>
-                <input className="sf-input" value={settings.timezone} onChange={(e) => patch("timezone", e.target.value)} />
-              </div>
-              <div className="sf-row-double">
-                <div className="sf-half">
-                  <label className="sf-label">Định dạng ngày</label>
-                  <select className="sf-select" value={settings.date_format} onChange={(e) => patch("date_format", e.target.value)}>
-                    <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                    <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                    <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                  </select>
-                </div>
-                <div className="sf-half">
-                  <label className="sf-label">Định dạng giờ</label>
-                  <select className="sf-select" value={settings.time_format} onChange={(e) => patch("time_format", e.target.value)}>
-                    <option value="24h">24 giờ</option>
-                    <option value="12h">12 giờ (AM/PM)</option>
-                  </select>
-                </div>
-              </div>
-              <div className="sf-save-row">
-                <button className={`btn-save-settings ${saved ? "saved" : ""}`} onClick={handleSave}>
-                  {saved ? <><CheckCircle2 size={14} /> Đã lưu!</> : "Lưu thay đổi"}
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {section === "language" && (
-          <section className="settings-section">
-            <h2 className="s-section-title">NGÔN NGỮ</h2>
-            <p className="s-section-desc">Hệ thống hiện chỉ hỗ trợ Tiếng Việt.</p>
-            <div className="sf-row" style={{ maxWidth: "260px" }}>
-              <select className="sf-select" disabled value="vi"><option value="vi">Tiếng Việt</option></select>
-            </div>
-          </section>
-        )}
-
-        {section === "security" && (
-          <section className="settings-section">
-            <h2 className="s-section-title">BẢO MẬT</h2>
-            <p className="s-section-desc">Hệ thống hiện chỉ có 1 người vận hành (admin) — chưa có đăng nhập/phân quyền nhiều người dùng.</p>
-            <div className="quick-settings-list">
-              <div className="qs-row">
-                <span className="qs-label">Xác nhận trước khi xoá</span>
-                <button className={`toggle-switch ${quickToggles.confirmDelete ? "on" : ""}`} onClick={() => toggleQuick("confirmDelete")}><span className="toggle-knob" /></button>
-              </div>
-            </div>
-            <div className="sf-save-row" style={{ borderTop: "none", paddingTop: 0 }}>
-              <button className="btn-backup-action" disabled title="Chưa có hệ thống đăng nhập">Đổi mật khẩu</button>
-            </div>
-          </section>
-        )}
-
-        {section === "backup" && (
-          <section className="settings-section">
-            <h2 className="s-section-title">SAO LƯU DỮ LIỆU</h2>
-            <p className="s-section-desc">Hệ thống hiện lưu toàn bộ dữ liệu trong 1 file SQLite (backend/uav_patrol.db) — sao lưu/khôi phục tự động chưa triển khai, thực hiện thủ công bằng cách copy file này.</p>
-            <div className="backup-cards-row">
-              <div className="backup-card">
-                <span className="bc-label">Sao lưu gần nhất</span>
-                <span className="bc-date">Chưa có bản sao lưu</span>
-                <span className="bc-by">—</span>
-              </div>
-              <div className="backup-card">
-                <span className="bc-label">Tự động sao lưu</span>
-                <div className="bc-auto-row"><span className="auto-check">○</span><span className="auto-text">Chưa bật — cần chạy tác vụ định kỳ copy file thủ công</span></div>
-              </div>
-              <div className="backup-card actions">
-                <button className="btn-backup-action primary" disabled title="Chưa triển khai">Sao lưu ngay</button>
-                <button className="btn-backup-action" disabled title="Chưa triển khai">Cài đặt sao lưu</button>
-              </div>
-            </div>
-
-            <h2 className="s-section-title" style={{ marginTop: "18px" }}>KHÔI PHỤC DỮ LIỆU</h2>
-            <p className="s-section-desc">Khôi phục dữ liệu hệ thống từ các bản sao lưu.</p>
-            <div className="backup-cards-row" style={{ gridTemplateColumns: "1fr" }}>
-              <div className="backup-card actions" style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <button className="btn-backup-action" disabled title="Chưa triển khai"><Upload size={12} /> Chọn file sao lưu</button>
-                <span className="logo-hint">Định dạng: .zip (không quá 2GB)</span>
-              </div>
-            </div>
-          </section>
-        )}
-      </div>
-
-      <aside className="settings-right-sidebar">
-        <div className="srb-card">
-          <div className="srb-card-title">TÀI KHOẢN QUẢN TRỊ</div>
-          <div className="admin-account-row">
-            <div className="admin-avatar-box">
-              <div className="admin-avatar-circle"><User size={24} color="#94a3b8" /></div>
-              <button className="btn-avatar-edit" disabled title="Chưa hỗ trợ đổi ảnh"><Pencil size={10} color="#000" /></button>
-            </div>
-            <div className="admin-info-grid">
-              <div className="ai-row"><span className="ai-key">Tên đăng nhập</span><span className="ai-val">admin</span></div>
-              <div className="ai-row"><span className="ai-key">Họ và tên</span><span className="ai-val">Quản trị viên</span></div>
-              <div className="ai-row"><span className="ai-key">Email</span><span className="ai-val">admin@uavcontrol.vn</span></div>
-            </div>
           </div>
-        </div>
+        )}
 
-        <div className="srb-card">
-          <div className="srb-card-title">THÔNG TIN HỆ THỐNG</div>
-          <div className="sys-info-grid">
-            <div className="si-row"><span className="si-key">Số UAV trong hệ thống</span><span className="si-val green">{counts.uavs}</span></div>
-            <div className="si-row"><span className="si-key">Tổng cảnh báo đã ghi nhận</span><span className="si-val">{counts.alerts}</span></div>
-            <div className="si-row"><span className="si-key">Phiên bản hệ thống</span><span className="si-val">v1.0.0</span></div>
-            <div className="si-row"><span className="si-key">Cơ sở dữ liệu</span><span className="si-val font-mono">SQLite</span></div>
-            <div className="si-row col">
-              <span className="si-key">Dung lượng lưu trữ</span>
-              <div className="storage-bar-wrap">
-                <div className="storage-bar-track"><div className="storage-bar-fill" style={{ width: "8%" }} /></div>
-                <span className="storage-bar-label">~vài MB / không giới hạn</span>
-              </div>
-            </div>
-          </div>
-          <button className="btn-check-update" disabled title="Chưa có cơ chế cập nhật tự động">Kiểm tra cập nhật</button>
-        </div>
+        {/* TAB 3: BẢN ĐỒ (EXACT MATCH REFERENCE SCREENSHOT) */}
+        {activeTab === "map" && <MapSettingsView />}
 
-        <div className="srb-card">
-          <div className="srb-card-title">CÀI ĐẶT NHANH</div>
-          <div className="quick-settings-list">
-            <div className="qs-row"><span className="qs-label">Bật chế độ tối</span><button className={`toggle-switch ${quickToggles.darkMode ? "on" : ""}`} disabled><span className="toggle-knob" /></button></div>
-            <div className="qs-row"><span className="qs-label">Tự động lưu ghi chép</span><button className={`toggle-switch ${quickToggles.autoSaveNotes ? "on" : ""}`} onClick={() => toggleQuick("autoSaveNotes")}><span className="toggle-knob" /></button></div>
-            <div className="qs-row"><span className="qs-label">Hiển thị lưới trên bản đồ</span><button className={`toggle-switch ${quickToggles.mapGrid ? "on" : ""}`} onClick={() => toggleQuick("mapGrid")}><span className="toggle-knob" /></button></div>
-            <div className="qs-row"><span className="qs-label">Âm thanh cảnh báo</span><button className={`toggle-switch ${quickToggles.alertSound ? "on" : ""}`} onClick={() => toggleQuick("alertSound")}><span className="toggle-knob" /></button></div>
-            <div className="qs-row"><span className="qs-label">Xác nhận trước khi xoá</span><button className={`toggle-switch ${quickToggles.confirmDelete ? "on" : ""}`} onClick={() => toggleQuick("confirmDelete")}><span className="toggle-knob" /></button></div>
-          </div>
-        </div>
-      </aside>
-    </div>
-  );
-}
 
-// --- UAV & Thiết bị: danh sách UAV thật, chỉnh nguồn video ---
-function UavDeviceTab() {
-  const [uavs, setUavs] = useState([]);
-  const [savedId, setSavedId] = useState(null);
 
-  async function reload() {
-    setUavs(await listUAVs());
-  }
-  useEffect(() => { reload(); }, []);
+        {/* TAB 4: BẢO MẬT (EXACT MATCH REFERENCE SCREENSHOT) */}
+        {activeTab === "security" && <SecuritySettingsView />}
 
-  async function saveSource(uav, value) {
-    await updateUAV(uav.id, { video_source: value });
-    setSavedId(uav.id);
-    setTimeout(() => setSavedId(null), 1500);
-    reload();
-  }
-
-  return (
-    <div className="settings-body">
-      <div className="settings-center-content" style={{ gridColumn: "1 / 4" }}>
-        <section className="settings-section">
-          <h2 className="s-section-title">UAV &amp; THIẾT BỊ</h2>
-          <p className="s-section-desc">Danh sách UAV thật (thêm/xoá/kích hoạt giám sát trực tiếp ở trang "UAV"). Ở đây chỉ chỉnh nguồn video từng UAV.</p>
-          <table className="rpt-table full">
-            <thead><tr><th>Tên</th><th>Loại</th><th>Trạng thái</th><th>Khu vực</th><th>Nguồn video</th></tr></thead>
-            <tbody>
-              {uavs.map((u) => (
-                <tr key={u.id}>
-                  <td><strong>{u.name}</strong></td>
-                  <td>{u.type || "-"}</td>
-                  <td>{u.status}</td>
-                  <td>{u.zone || "-"}</td>
-                  <td>
-                    <input
-                      className="sf-input"
-                      defaultValue={u.video_source}
-                      onBlur={(e) => e.target.value !== u.video_source && saveSource(u, e.target.value)}
-                      style={{ fontSize: "11px" }}
-                    />
-                    {savedId === u.id && <span className="green-text" style={{ fontSize: "10px", marginLeft: "6px" }}>Đã lưu</span>}
-                  </td>
-                </tr>
-              ))}
-              {uavs.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: "12px" }}>Chưa có UAV.</td></tr>}
-            </tbody>
-          </table>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function UsersTab() {
-  return (
-    <div className="settings-body">
-      <div className="settings-center-content" style={{ gridColumn: "1 / 4" }}>
-        <section className="settings-section">
-          <h2 className="s-section-title">NGƯỜI DÙNG &amp; PHÂN QUYỀN</h2>
-          <p className="s-section-desc">
-            <Users size={14} style={{ verticalAlign: "-2px", marginRight: "4px" }} />
-            Hệ thống hiện thiết kế cho 1 người vận hành (admin), chưa có đăng nhập/phân quyền nhiều tài khoản.
-            Tính năng này chưa được triển khai — xem README mục "Chưa làm (đợt sau)".
-          </p>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-// --- Nhật ký hệ thống: tái dùng alert_events như một activity log chung ---
-function SystemLogTab() {
-  const [logs, setLogs] = useState([]);
-  useEffect(() => {
-    getLogs().then((l) => setLogs(Array.isArray(l) ? l.slice(0, 100) : []));
-  }, []);
-
-  return (
-    <div className="settings-body">
-      <div className="settings-center-content" style={{ gridColumn: "1 / 4" }}>
-        <section className="settings-section">
-          <h2 className="s-section-title">NHẬT KÝ HỆ THỐNG</h2>
-          <p className="s-section-desc">
-            <ScrollText size={14} style={{ verticalAlign: "-2px", marginRight: "4px" }} />
-            Chưa có nhật ký thao tác người dùng (login/CRUD) riêng — hiển thị log cảnh báo phát hiện thật (alert_events) làm nhật ký hoạt động chung.
-          </p>
-          <table className="rpt-table full">
-            <thead><tr><th>Thời gian</th><th>Sự kiện</th><th>Mức độ</th><th>UAV</th></tr></thead>
-            <tbody>
-              {logs.map((l) => (
-                <tr key={l.id}>
-                  <td className="font-mono" style={{ fontSize: "10px" }}>{new Date(l.timestamp).toLocaleString("vi-VN")}</td>
-                  <td>Phát hiện {l.class} ({l.distance_m}m)</td>
-                  <td><span className={`badge-status ${l.severity === "red" ? "unhandled" : "processing"}`}>{SEVERITY_LABEL[l.severity] ?? l.severity}</span></td>
-                  <td>UAV #{l.uav_id}</td>
-                </tr>
-              ))}
-              {logs.length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: "12px" }}>Chưa có bản ghi nào.</td></tr>}
-            </tbody>
-          </table>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-const NOT_BUILT_ICON = { "Thông báo": Bell, "Dữ liệu & Lưu trữ": Database, "Tích hợp": Plug };
-const NOT_BUILT_DESC = {
-  "Thông báo": "Chưa có kênh gửi thông báo thật (Telegram/email/SMS) — xem README mục \"Chưa làm (đợt sau)\".",
-  "Dữ liệu & Lưu trữ": "Chưa có chính sách lưu trữ/dọn dữ liệu tự động — dữ liệu hiện lưu vô thời hạn trong SQLite.",
-  "Tích hợp": "Chưa có tích hợp hệ thống bên ngoài (MAVLink/bản đồ thời tiết/ESB...) — xem README mục \"Chưa làm (đợt sau)\".",
-};
-
-function NotBuiltTab({ name }) {
-  const Icon = NOT_BUILT_ICON[name] ?? Plane;
-  return (
-    <div className="settings-body">
-      <div className="settings-center-content" style={{ gridColumn: "1 / 4" }}>
-        <section className="settings-section">
-          <h2 className="s-section-title">{name.toUpperCase()}</h2>
-          <p className="s-section-desc"><Icon size={14} style={{ verticalAlign: "-2px", marginRight: "4px" }} /> {NOT_BUILT_DESC[name]}</p>
-        </section>
-      </div>
+        {/* TAB 5: TẢI XUỐNG VIDEO (EXACT MATCH REFERENCE SCREENSHOT) */}
+        {(activeTab === "download" || activeTab === "backup") && (
+          <VideoDownloadSettingsView />
+        )}
+      </main>
     </div>
   );
 }

@@ -45,12 +45,14 @@ const STATUS_CLASS = {
 };
 
 const DEFAULT_FLEET = [
-  { id: 1, name: "UAV_01", type: "Falcon 8X", status: "flying", battery: 85, zone: "Khu vực A", alt: 120, speed: 45, signal: "Strong" },
-  { id: 2, name: "UAV_02", type: "Eagle Pro", status: "flying", battery: 78, zone: "Khu vực B", alt: 150, speed: 48, signal: "Strong" },
-  { id: 3, name: "UAV_03", type: "SkyEye 4K", status: "flying", battery: 62, zone: "Khu vực C", alt: 110, speed: 42, signal: "Strong" },
-  { id: 4, name: "UAV_04", type: "Phantom 4 RTK", status: "ready", battery: 92, zone: "Căn cứ", alt: 0, speed: 0, signal: "Strong" },
-  { id: 5, name: "UAV_05", type: "Matrice 300 RTK", status: "offline", battery: null, zone: "-", alt: 0, speed: 0, signal: "None" },
-  { id: 6, name: "UAV_06", type: "Autel EVO II", status: "maintenance", battery: null, zone: "Căn cứ", alt: 0, speed: 0, signal: "None" },
+  { id: 1, name: "UAV_01", type: "Falcon 8X", status: "flying", battery: 85, zone: "Khu vực biên giới A", alt: 120, speed: 45, signal: "Strong" },
+  { id: 2, name: "UAV_02", type: "Eagle Pro", status: "flying", battery: 78, zone: "Khu vực biên giới B", alt: 150, speed: 48, signal: "Strong" },
+  { id: 3, name: "UAV_03", type: "SkyEye 4K", status: "ready", battery: 62, zone: "Khu C", alt: 0, speed: 0, signal: "Strong" },
+  { id: 4, name: "UAV_04", type: "Phantom 4 RTK", status: "flying", battery: 92, zone: "Khu D", alt: 135, speed: 50, signal: "Strong" },
+  { id: 5, name: "UAV_05", type: "Matrice 300 RTK", status: "maintenance", battery: 45, zone: "Căn cứ", alt: 0, speed: 0, signal: "None" },
+  { id: 6, name: "UAV_06", type: "Inspire 3", status: "ready", battery: 88, zone: "Căn cứ", alt: 0, speed: 0, signal: "Strong" },
+  { id: 7, name: "UAV_07", type: "Skydio 2+", status: "flying", battery: 95, zone: "Khu E", alt: 180, speed: 55, signal: "Strong" },
+  { id: 8, name: "UAV_08", type: "WingtraOne GEN II", status: "ready", battery: 70, zone: "Căn cứ", alt: 0, speed: 0, signal: "Strong" },
 ];
 
 export default function UAVList({ activeUavId, payload, onOpenAlerts }) {

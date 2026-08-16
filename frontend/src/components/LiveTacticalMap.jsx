@@ -1,53 +1,79 @@
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { Layers, Plus, Minus } from "lucide-react";
 
-const HOME_POS = [21.0285, 105.8542];
-const UAV_POS = [21.0315, 105.8585];
-const TARGET_POS = [21.0345, 105.8620];
+const HOME_POS = [21.0285, 105.8482];
+const MAV_POS = [21.0315, 105.8525];
+const UAV_POS = [21.0305, 105.8515];
+const TARGET_POS = [21.0275, 105.8640];
 
 const uavIcon = L.divIcon({
-  className: "tactical-map-marker uav-marker",
-  html: `<div class="marker-box uav">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2">
-            <polygon points="12 2 19 21 12 17 5 21 12 2"></polygon>
-          </svg>
-          <span>UAV_02</span>
+  className: "tactical-map-marker uav-marker-v2",
+  html: `<div class="tactical-pin blue-pin">
+          <div class="pin-icon-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+            </svg>
+          </div>
+          <span class="pin-tag font-sans font-bold">UAV_02</span>
+         </div>`,
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+});
+
+const mavIcon = L.divIcon({
+  className: "tactical-map-marker mav-marker-v2",
+  html: `<div class="tactical-pin green-radar-pin">
+          <div class="radar-dot-pulse"></div>
+          <span class="pin-tag green-tag font-sans font-bold">MAV_02</span>
          </div>`,
   iconSize: [36, 36],
   iconAnchor: [18, 18],
 });
 
 const homeIcon = L.divIcon({
-  className: "tactical-map-marker home-marker",
-  html: `<div class="marker-box home">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-          </svg>
-          <span>HOME</span>
-         </div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-});
-
-const targetIcon = L.divIcon({
-  className: "tactical-map-marker target-marker",
-  html: `<div class="marker-box target">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="2" x2="12" y2="22"></line>
-            <line x1="2" y1="12" x2="22" y2="12"></line>
-          </svg>
-          <span>MỤC TIÊU 01</span>
+  className: "tactical-map-marker home-marker-v2",
+  html: `<div class="tactical-pin home-pin">
+          <div class="home-icon-circle">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            </svg>
+          </div>
+          <span class="pin-tag home-tag font-sans font-bold">HOME</span>
          </div>`,
   iconSize: [36, 36],
   iconAnchor: [18, 18],
 });
 
-export default function LiveTacticalMap({ uavPos = UAV_POS, targetPos = TARGET_POS, distance = "120 m", eta = "00:02:15" }) {
+const targetIcon = L.divIcon({
+  className: "tactical-map-marker target-marker-v2",
+  html: `<div class="tactical-pin target-red-pin">
+          <div class="red-target-reticle">
+            <div class="reticle-corner tl"></div>
+            <div class="reticle-corner tr"></div>
+            <div class="reticle-corner bl"></div>
+            <div class="reticle-corner br"></div>
+            <div class="house-ic">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              </svg>
+            </div>
+          </div>
+          <span class="pin-tag target-tag font-sans font-bold">MỤC TIÊU 01</span>
+         </div>`,
+  iconSize: [50, 50],
+  iconAnchor: [25, 25],
+});
+
+export default function LiveTacticalMap({
+  uavPos = UAV_POS,
+  targetPos = TARGET_POS,
+  distance = "120 m",
+  eta = "00:02:15",
+}) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
-  const uavMarkerRef = useRef(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -55,22 +81,34 @@ export default function LiveTacticalMap({ uavPos = UAV_POS, targetPos = TARGET_P
     const map = L.map(containerRef.current, {
       zoomControl: false,
       attributionControl: false,
-    }).setView(uavPos, 14);
+    }).setView([21.0295, 105.8570], 15);
 
     // Dark tiles map layer
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19,
-      subdomains: "abcd",
-    }).addTo(map);
+    L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      {
+        maxZoom: 19,
+        subdomains: "abcd",
+      }
+    ).addTo(map);
 
     // Add markers
     L.marker(HOME_POS, { icon: homeIcon }).addTo(map);
-    uavMarkerRef.current = L.marker(uavPos, { icon: uavIcon }).addTo(map);
+    L.marker(MAV_POS, { icon: mavIcon }).addTo(map);
+    L.marker(uavPos, { icon: uavIcon }).addTo(map);
     L.marker(targetPos, { icon: targetIcon }).addTo(map);
 
-    // Path polylines
-    L.polyline([HOME_POS, uavPos], { color: "#60a5fa", weight: 2, dashArray: "4, 6" }).addTo(map);
-    L.polyline([uavPos, targetPos], { color: "#4ade80", weight: 3 }).addTo(map);
+    // Path polylines (Trajectory line)
+    L.polyline([HOME_POS, MAV_POS], {
+      color: "#3b82f6",
+      weight: 2,
+      dashArray: "4, 6",
+    }).addTo(map);
+
+    L.polyline([MAV_POS, targetPos], {
+      color: "#22c55e",
+      weight: 2.5,
+    }).addTo(map);
 
     mapRef.current = map;
 
@@ -80,44 +118,54 @@ export default function LiveTacticalMap({ uavPos = UAV_POS, targetPos = TARGET_P
     };
   }, []);
 
-  useEffect(() => {
-    if (uavMarkerRef.current && uavPos) {
-      uavMarkerRef.current.setLatLng(uavPos);
-    }
-  }, [uavPos]);
+  const handleZoomIn = () => {
+    if (mapRef.current) mapRef.current.zoomIn();
+  };
+
+  const handleZoomOut = () => {
+    if (mapRef.current) mapRef.current.zoomOut();
+  };
 
   return (
-    <div className="tactical-map-card">
-      <div className="tactical-map-header">
-        <div className="title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-            <circle cx="12" cy="10" r="3"></circle>
-          </svg>
-          <span>VỊ TRÍ UAV</span>
+    <div className="vti-uav-card-exact font-sans">
+      {/* HEADER BAR */}
+      <div className="vti-header font-sans">
+        <h3 className="vti-title">VỊ TRÍ UAV</h3>
+        <div className="vti-header-actions">
+          <span className="badge-2d-mode font-sans">2D</span>
         </div>
-        <div className="map-actions">
-          <span className="badge-2d">2D</span>
-          <button className="icon-btn" title="Lớp bản đồ">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-              <polyline points="2 17 12 22 22 17"></polyline>
-              <polyline points="2 12 12 17 22 12"></polyline>
-            </svg>
+      </div>
+
+      {/* MAP VIEWPORT & OVERLAY CONTROLS */}
+      <div className="vti-map-viewport-wrapper">
+        <div ref={containerRef} className="vti-leaflet-container" />
+
+        {/* TOP RIGHT LAYER ICON OVERLAY */}
+        <button className="btn-layer-icon-overlay" title="Lớp bản đồ">
+          <Layers size={15} color="#cbd5e1" />
+        </button>
+
+        {/* RIGHT ZOOM BUTTONS STACK OVERLAY */}
+        <div className="vti-zoom-stacked-box">
+          <button className="zoom-btn" onClick={handleZoomIn} title="Phóng to">
+            <Plus size={16} />
+          </button>
+          <div className="zoom-divider" />
+          <button className="zoom-btn" onClick={handleZoomOut} title="Thu nhỏ">
+            <Minus size={16} />
           </button>
         </div>
       </div>
 
-      <div ref={containerRef} className="tactical-leaflet-container" />
-
-      <div className="tactical-map-footer">
-        <div>
+      {/* BOTTOM TELEMETRY FOOTER BAR */}
+      <div className="vti-footer-bar font-sans">
+        <div className="tele-item">
           <span>Khoảng cách đến mục tiêu: </span>
-          <strong>{distance}</strong>
+          <strong className="val-white font-mono">{distance}</strong>
         </div>
-        <div>
+        <div className="tele-item">
           <span>ETA: </span>
-          <strong>{eta}</strong>
+          <strong className="val-white font-mono">{eta}</strong>
         </div>
       </div>
     </div>

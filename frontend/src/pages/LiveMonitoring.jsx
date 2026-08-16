@@ -147,43 +147,13 @@ export default function LiveMonitoring({ payload }) {
 
         <div className="right-tactical-column-v2">
           {/* Top Card: VỊ TRÍ UAV (Mini Tactical Map) */}
-          <div className="dashboard-panel mini-map-card">
-            <div className="sidebar-card-header">
-              <h3 className="sidebar-title">VỊ TRÍ UAV</h3>
-              <div className="mini-map-actions">
-                <span className="btn-mini-mode">2D</span>
-                <button className="icon-tool-btn"><Layers size={13} /></button>
-              </div>
-            </div>
+          <LiveTacticalMap
+            distance="120 m"
+            eta="00:02:15"
+          />
 
-            <div className="mini-map-body-container">
-              <LiveTacticalMap
-                uavPos={[21.031, 105.855]}
-                targetPos={[21.026, 105.86]}
-                distance="120 m"
-              />
-              <div className="mini-map-bottom-info">
-                <span>Khoảng cách đến mục tiêu: <strong>120 m</strong></span>
-                <span>ETA: <strong>00:02:15</strong></span>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom Card: CẢM BIẾN (IR / Thermal Video Feed) */}
-          <div className="dashboard-panel thermal-card">
-            <div className="sidebar-card-header">
-              <h3 className="sidebar-title">CẢM BIẾN</h3>
-              <div className="sensor-mode-tabs">
-                <button className={`tab-btn ${cameraMode === "EO" ? "active" : ""}`} onClick={() => setCameraMode("EO")}>EO</button>
-                <button className={`tab-btn ${cameraMode === "IR" ? "active" : ""}`} onClick={() => setCameraMode("IR")}>IR</button>
-                <button className={`tab-btn ${cameraMode === "Laser" ? "active" : ""}`} onClick={() => setCameraMode("Laser")}>Laser</button>
-              </div>
-            </div>
-
-            <div className="thermal-body-container">
-              <ThermalSensorView />
-            </div>
-          </div>
+          {/* Bottom Card: CẢM BIẾN (EO / IR / Thermal Video Feed) */}
+          <ThermalSensorView />
         </div>
       </div>
 
