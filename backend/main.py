@@ -70,7 +70,7 @@ def shutdown():
 
 async def _mjpeg_frames():
     while True:
-        frame = pipeline.get_frame()
+        frame = pipeline.get_live_frame()
         if frame is not None:
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
         await asyncio.sleep(0.03)

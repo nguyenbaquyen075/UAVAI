@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Camera,
   Crosshair,
@@ -13,10 +13,33 @@ import {
 } from "lucide-react";
 import { API_BASE } from "../api";
 
+const CLASS_LABEL = { person: "Người", car: "Ô tô", motorcycle: "Xe máy", bus: "Xe buýt", truck: "Xe tải" };
+const SEVERITY_COLOR = { red: "#ef4444", yellow: "#f59e0b", green: "#4ade80" };
+const SEVERITY_TEXT = { red: "NGUY HIỂM", yellow: "CẢNH BÁO", green: "BÌNH THƯỜNG" };
+
+// object-fit: cover cắt bớt frame để lấp đầy khung — quy đổi bbox (toạ độ pixel gốc) sang
+// vị trí % trên khung hiển thị phải bù đúng phần bị crop, không thì box sẽ lệch khỏi mục tiêu thật.
+function bboxToBoxPx(bbox, frameW, frameH, boxW, boxH) {
+  if (!frameW || !frameH || !boxW || !boxH) return null;
+  const scale = Math.max(boxW / frameW, boxH / frameH);
+  const renderedW = frameW * scale;
+  const renderedH = frameH * scale;
+  const offsetX = (boxW - renderedW) / 2;
+  const offsetY = (boxH - renderedH) / 2;
+  const [x1, y1, x2, y2] = bbox;
+  return {
+    left: offsetX + x1 * scale,
+    top: offsetY + y1 * scale,
+    width: (x2 - x1) * scale,
+    height: (y2 - y1) * scale,
+  };
+}
+
 export default function TacticalVideoHUD({
   isLive = true,
   telemetry,
   objects = [],
+  frameSize,
   cameraMode = "EO",
   zoomLevel = 5.2,
   onZoomChange,
@@ -25,8 +48,21 @@ export default function TacticalVideoHUD({
   const [isFull, setIsFull] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [activeTool, setActiveTool] = useState("crosshair");
-  const [feedSrc, setFeedSrc] = useState("/uav_aerial_feed.png");
+  // ponytail: /video là stream MJPEG thật (chỉ chạy khi có 1 UAV active) — nếu backend
+  // chưa bật/không có UAV active thì ảnh vỡ, fallback về placeholder tĩnh qua onError.
+  const [feedSrc, setFeedSrc] = useState(`${API_BASE}/video`);
+  const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
   const containerRef = useRef(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setBoxSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const currentZoom = onZoomChange ? zoomLevel : zoom;
 
@@ -53,22 +89,6 @@ export default function TacticalVideoHUD({
     a.download = `uav_snapshot_${Date.now()}.jpg`;
     a.click();
   };
-
-  const displayTargets =
-    objects.length > 0
-      ? objects
-      : [
-          {
-            id: "01",
-            label: "MỤC TIÊU 01",
-            type: "XE",
-            speed: "32 km/h",
-            distance: "120m",
-            color: "red",
-            top: "38%",
-            left: "44%",
-          },
-        ];
 
   return (
     <div
@@ -128,28 +148,34 @@ export default function TacticalVideoHUD({
         </div>
       )}
 
-      {/* DYNAMIC TARGET BOUNDING BOXES */}
-      {displayTargets.map((target) => (
-        <div
-          key={target.id || target.label}
-          className={`hud-target-box ${target.color || "red"}`}
-          style={{ top: target.top || "40%", left: target.left || "45%" }}
-        >
-          <div className="target-corners">
-            <div className="c-tl" />
-            <div className="c-tr" />
-            <div className="c-bl" />
-            <div className="c-br" />
-          </div>
+      {/* KHUNG BÁM MỤC TIÊU THẬT — toạ độ quy đổi từ bbox YOLO (pixel gốc) sang vị trí hiển thị,
+          bù đúng phần crop của object-fit:cover nên bám khớp mục tiêu trên video */}
+      {objects.slice(0, 8).map((o) => {
+        const box = bboxToBoxPx(o.bbox, frameSize?.width, frameSize?.height, boxSize.w, boxSize.h);
+        if (!box) return null;
+        const color = SEVERITY_COLOR[o.severity] || "#4ade80";
+        return (
+          <div
+            key={o.track_id}
+            className="hud-target-box"
+            style={{ left: box.left, top: box.top, width: box.width, height: box.height, borderColor: color }}
+          >
+            <span className="corner tl" style={{ borderColor: color }} />
+            <span className="corner tr" style={{ borderColor: color }} />
+            <span className="corner bl" style={{ borderColor: color }} />
+            <span className="corner br" style={{ borderColor: color }} />
 
-          <div className="target-info-card">
-            <div className="target-card-header">{target.label}</div>
-            <div className="target-card-row">LOẠI: {target.type}</div>
-            <div className="target-card-row">TỐC ĐỘ: {target.speed}</div>
-            <div className="target-card-row">KHOẢNG CÁCH: {target.distance}</div>
+            <div className="hud-target-card" style={{ borderColor: color }}>
+              <div className="hud-target-card-title">
+                MỤC TIÊU <span style={{ color }}>{o.track_id}</span>
+              </div>
+              <div className="row">LOẠI: {CLASS_LABEL[o.class] || o.class}</div>
+              <div className="row">KHOẢNG CÁCH: {o.distance_m != null ? `${o.distance_m}m` : "--"}</div>
+              <div className="row" style={{ color }}>{SEVERITY_TEXT[o.severity] || "ĐANG THEO DÕI"}</div>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* LEFT TOOLBAR OVERLAY (EXACT USER IMAGE REFERENCE) */}
       <div className="hud-left-toolbar-stack">
@@ -235,19 +261,13 @@ export default function TacticalVideoHUD({
           H.SPD <strong>{telemetry?.speed_kmh ?? 48.0} km/h</strong>
         </div>
         <div className="telemetry-cell">
-          V.SPD <strong>1.2 m/s</strong>
-        </div>
-        <div className="telemetry-cell">
-          COG <strong className="green-text">320°</strong>
+          COG <strong className="green-text">{telemetry?.heading_deg ?? 0}°</strong>
         </div>
         <div className="telemetry-cell">
           BAT <strong className="green-text">{telemetry?.battery_pct ?? 78}%</strong>
         </div>
         <div className="telemetry-cell">
-          GPS <strong>{telemetry?.satellites ?? 12}</strong>
-        </div>
-        <div className="telemetry-cell">
-          RSSI <strong className="green-text">-65 dBm</strong>
+          TÍN HIỆU <strong className={telemetry?.signal === "Weak" ? "text-red" : "green-text"}>{telemetry?.signal ?? "Strong"}</strong>
         </div>
       </div>
     </div>

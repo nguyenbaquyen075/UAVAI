@@ -1,146 +1,35 @@
-import { useState } from "react";
-
-export default function UavRadarChart() {
-  const axes = [
-    "Tỷ lệ thành công",
-    "Thời gian hoàn thành",
-    "Tiêu thụ pin",
-    "Quãng đường",
-    "Độ chính xác",
-    "An toàn bay",
-  ];
-
-  const series = [
-    {
-      name: "UAV_01",
-      color: "#22c55e",
-      ratios: [0.95, 0.82, 0.88, 0.92, 0.88, 0.94],
-    },
-    {
-      name: "UAV_02",
-      color: "#3b82f6",
-      ratios: [0.82, 0.75, 0.70, 0.80, 0.78, 0.84],
-    },
-    {
-      name: "UAV_03",
-      color: "#a855f7",
-      ratios: [0.70, 0.65, 0.62, 0.68, 0.72, 0.76],
-    },
-  ];
-
-  const width = 380;
-  const height = 240;
-  const centerX = 190;
-  const centerY = 120;
-  const radius = 65;
-
-  // 6 Angles starting at top (-Math.PI/2)
-  const angles = axes.map((_, i) => (i * 2 * Math.PI) / 6 - Math.PI / 2);
-
-  const getPolygonPoints = (ratios) =>
-    ratios
-      .map((r, i) => {
-        const angle = angles[i];
-        const x = centerX + radius * r * Math.cos(angle);
-        const y = centerY + radius * r * Math.sin(angle);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(" ");
+// perUav: [{ uav_id, name, success_rate, alerts_count }] — hai chỉ số thật duy nhất có sẵn per-UAV
+// (các trục khác của radar cũ — tiêu thụ pin/quãng đường/độ chính xác/an toàn bay — không có dữ liệu backend)
+export default function UavRadarChart({ perUav = [] }) {
+  const colors = ["#22c55e", "#3b82f6", "#a855f7", "#f59e0b", "#06b6d4", "#ef4444"];
+  const maxAlerts = Math.max(1, ...perUav.map((u) => u.alerts_count));
 
   return (
     <div className="uav-radar-chart-container-v2">
-      {/* SVG Spider Net & Polygon Overlay */}
-      <div className="radar-svg-box">
-        <svg width="100%" height="240" viewBox={`0 0 ${width} ${height}`}>
-          {/* 4 Concentric Hexagonal Grid Lines */}
-          {[0.25, 0.5, 0.75, 1.0].map((level) => (
-            <polygon
-              key={level}
-              points={getPolygonPoints(Array(6).fill(level))}
-              fill="none"
-              stroke="#1e293b"
-              strokeWidth="1"
-            />
+      {perUav.length === 0 ? (
+        <div className="chart-empty-state">Chưa có dữ liệu UAV</div>
+      ) : (
+        <div className="perf-bar-list">
+          {perUav.map((u, i) => (
+            <div key={u.uav_id} className="type-progress-item">
+              <div className="type-meta-row">
+                <span className="lgd-dot" style={{ background: colors[i % colors.length] }} />
+                <span className="name">{u.name}</span>
+                <span className="val font-mono">{u.success_rate}% HT · {u.alerts_count} cảnh báo</span>
+              </div>
+              <div className="type-bar-track">
+                <div className="type-bar-fill green" style={{ width: `${u.success_rate}%` }} />
+              </div>
+              <div className="type-bar-track">
+                <div className="type-bar-fill" style={{ width: `${(u.alerts_count / maxAlerts) * 100}%`, background: "#ef4444" }} />
+              </div>
+            </div>
           ))}
-
-          {/* 6 Radial Grid Spokes */}
-          {angles.map((angle, i) => {
-            const x2 = centerX + radius * Math.cos(angle);
-            const y2 = centerY + radius * Math.sin(angle);
-            return <line key={i} x1={centerX} y1={centerY} x2={x2} y2={y2} stroke="#1e293b" strokeWidth="1" />;
-          })}
-
-          {/* 3 UAV Polygons with Filled Glow & Glowing Vertex Dots */}
-          {series.map((s) => {
-            const pointsStr = getPolygonPoints(s.ratios);
-            return (
-              <g key={s.name}>
-                <polygon points={pointsStr} fill={`${s.color}25`} stroke={s.color} strokeWidth="2" />
-                {s.ratios.map((r, i) => {
-                  const angle = angles[i];
-                  const cx = centerX + radius * r * Math.cos(angle);
-                  const cy = centerY + radius * r * Math.sin(angle);
-                  return (
-                    <circle
-                      key={i}
-                      cx={cx}
-                      cy={cy}
-                      r="3.5"
-                      fill={s.color}
-                      stroke="#0b0f19"
-                      strokeWidth="1.5"
-                    />
-                  );
-                })}
-              </g>
-            );
-          })}
-
-          {/* 6 Metric Labels around Vertices */}
-          {axes.map((label, i) => {
-            const angle = angles[i];
-            const labelRadius = radius + 18;
-            const lx = centerX + labelRadius * Math.cos(angle);
-            const ly = centerY + labelRadius * Math.sin(angle);
-
-            // Text Alignment & Anchors
-            let textAnchor = "middle";
-            if (i === 1 || i === 2) {
-              textAnchor = "start";
-            } else if (i === 4 || i === 5) {
-              textAnchor = "end";
-            }
-
-            return (
-              <text
-                key={label}
-                x={lx}
-                y={ly}
-                textAnchor={textAnchor}
-                dominantBaseline="middle"
-                fill="#cbd5e1"
-                fontSize="11"
-                fontWeight="500"
-              >
-                {label}
-              </text>
-            );
-          })}
-        </svg>
-      </div>
-
-      {/* Bottom Series Legend Bar */}
+        </div>
+      )}
       <div className="radar-legend-bar-v2">
-        {series.map((s) => (
-          <div key={s.name} className="legend-chip-v2">
-            <span className="lgd-line-with-dot">
-              <span className="line" style={{ background: s.color }} />
-              <span className="dot" style={{ background: s.color }} />
-              <span className="line" style={{ background: s.color }} />
-            </span>
-            <span className="series-name">{s.name}</span>
-          </div>
-        ))}
+        <div className="legend-chip-v2"><span className="dot" style={{ background: "#22c55e" }} /><span className="series-name">Tỷ lệ hoàn thành</span></div>
+        <div className="legend-chip-v2"><span className="dot" style={{ background: "#ef4444" }} /><span className="series-name">Số cảnh báo</span></div>
       </div>
     </div>
   );

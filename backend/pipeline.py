@@ -28,16 +28,29 @@ class LowLatencyVideoStream:
         self.thread.start()
 
     def _reader(self):
+        # ponytail: file video không tự giới hạn tốc độ đọc như camera/RTSP thật — cv2 sẽ decode
+        # nhanh hết mức CPU cho phép (dễ >>fps gốc), khiến hiển thị bị "tua nhanh". Pace theo FPS
+        # gốc của file để phát mượt đúng tốc độ thật; nguồn RTSP/camera (fps=0/không xác định) thì
+        # bỏ qua, giữ hành vi cũ vì đã tự nhiên đến theo nhịp mạng.
+        fps = self.cap.get(cv2.CAP_PROP_FPS) or 0
+        frame_interval = 1.0 / fps if fps > 0 else 0
         while self.running:
+            t0 = time.time()
             ret, frame = self.cap.read()
             if not ret:
                 self.cap.release()
                 time.sleep(1)
                 self.cap = cv2.VideoCapture(self.source)
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                fps = self.cap.get(cv2.CAP_PROP_FPS) or 0
+                frame_interval = 1.0 / fps if fps > 0 else 0
                 continue
             self.frame = frame
             self.frame_timestamp = time.time()
+            if frame_interval:
+                sleep_left = frame_interval - (time.time() - t0)
+                if sleep_left > 0:
+                    time.sleep(sleep_left)
 
     def read(self):
         return self.frame, self.frame_timestamp
@@ -139,6 +152,8 @@ class DetectionPipeline:
                 tracker="bytetrack.yaml",
                 classes=enabled_ids,
                 verbose=False,
+                # imgsz mặc định (640) — ưu tiên độ chính xác bắt mục tiêu hơn tốc độ; /video giờ
+                # stream frame gốc tách riêng (xem get_live_frame) nên inference chậm không làm lag video.
             )
 
             now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -200,8 +215,21 @@ class DetectionPipeline:
                 self.latest_payload = payload
 
     def get_frame(self):
+        """Frame ĐÃ vẽ box detection — dùng cho snapshot tải xuống, không dùng cho stream trực tiếp
+        vì tốc độ bị khoá theo tốc độ inference (chậm nếu ưu tiên độ chính xác)."""
         with self.lock:
             return self.latest_jpeg
+
+    def get_live_frame(self):
+        """Frame gốc mới nhất, JPEG hoá riêng — tách khỏi tốc độ inference để /video luôn mượt
+        dù model chạy chậm hơn để bắt mục tiêu chính xác hơn. Không có box detection vẽ sẵn."""
+        if self.stream is None:
+            return None
+        frame, _ = self.stream.read()
+        if frame is None:
+            return None
+        ok, buf = cv2.imencode(".jpg", frame)
+        return buf.tobytes() if ok else None
 
     def get_payload(self):
         with self.lock:

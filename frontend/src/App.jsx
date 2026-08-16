@@ -30,7 +30,6 @@ import UAVList from "./pages/UAVList";
 import Missions from "./pages/Missions";
 import LiveMonitoring from "./pages/LiveMonitoring";
 import Targets from "./pages/Targets";
-import LogViewer from "./pages/LogViewer";
 import SettingsPage from "./pages/Settings";
 import MapView from "./pages/MapView";
 import Analytics from "./pages/Analytics";
@@ -193,7 +192,7 @@ export default function App() {
             <div className="telemetry-item battery">
               <Battery size={15} color="#4ade80" />
               <span>Pin hệ thống</span>
-              <strong className="green-text">{payload?.uav_status?.battery ?? 78}%</strong>
+              <strong className="green-text">{payload?.uav_status?.gps?.battery_pct ?? 78}%</strong>
             </div>
 
             <div className="telemetry-item clock">

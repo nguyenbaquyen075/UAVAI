@@ -24,6 +24,7 @@ import SignalBitrateCharts from "../components/SignalBitrateCharts";
 export default function LiveMonitoring({ payload }) {
   const [selectedUavId, setSelectedUavId] = useState(2);
   const [cameraMode, setCameraMode] = useState("EO");
+  const gps = payload?.uav_status?.gps;
 
   return (
     <div className="live-monitoring-page-v2">
@@ -46,9 +47,8 @@ export default function LiveMonitoring({ payload }) {
           </div>
           <div className="tele-card-body">
             <div className="main-val">
-              45 <span className="unit">km/h</span>
+              {gps?.speed_kmh ?? "--"} <span className="unit">km/h</span>
             </div>
-            <span className="sub-detail-muted">Ground: 48 km/h</span>
           </div>
         </div>
 
@@ -59,9 +59,8 @@ export default function LiveMonitoring({ payload }) {
           </div>
           <div className="tele-card-body">
             <div className="main-val">
-              120 <span className="unit">m</span>
+              {gps?.altitude_m ?? "--"} <span className="unit">m</span>
             </div>
-            <span className="sub-detail-muted">AGL: 98 m</span>
           </div>
         </div>
 
@@ -95,19 +94,17 @@ export default function LiveMonitoring({ payload }) {
             <Battery size={14} color="#4ade80" />
           </div>
           <div className="tele-card-body">
-            <div className="main-val green-val">78%</div>
-            <span className="sub-detail-muted">22.8V / 15.6Ah</span>
+            <div className="main-val green-val">{gps?.battery_pct ?? "--"}%</div>
           </div>
         </div>
 
         <div className="tele-card-v2">
           <div className="tele-card-header">
-            <span className="label">GPS</span>
+            <span className="label">HƯỚNG BAY</span>
             <Crosshair size={14} color="#4ade80" />
           </div>
           <div className="tele-card-body">
-            <div className="main-val">12</div>
-            <span className="sub-detail-green">Strong</span>
+            <div className="main-val">{gps?.heading_deg ?? "--"}°</div>
           </div>
         </div>
 
@@ -117,8 +114,7 @@ export default function LiveMonitoring({ payload }) {
             <SignalHigh size={14} color="#4ade80" />
           </div>
           <div className="tele-card-body">
-            <div className="main-val green-val">-65 dBm</div>
-            <span className="sub-detail-green">Strong</span>
+            <div className={`main-val ${gps?.signal === "Weak" ? "text-red" : "green-val"}`}>{gps?.signal ?? "--"}</div>
           </div>
         </div>
       </div>
@@ -128,20 +124,9 @@ export default function LiveMonitoring({ payload }) {
         <div className="main-video-hud-box">
           <TacticalVideoHUD
             isLive={true}
-            telemetry={{ lat: 21.031, lon: 105.855, speed_kmh: 45.2, altitude_m: 120 }}
-            latencyMs={35}
-            objects={[
-              {
-                id: "01",
-                label: "MỤC TIÊU 01",
-                type: "Phương tiện",
-                speed: "45 km/h",
-                distance: "120m",
-                heading: "320° NW",
-                top: "42%",
-                left: "48%",
-              },
-            ]}
+            telemetry={gps}
+            objects={payload?.objects ?? []}
+            frameSize={{ width: payload?.uav_status?.frame_width, height: payload?.uav_status?.frame_height }}
           />
         </div>
 

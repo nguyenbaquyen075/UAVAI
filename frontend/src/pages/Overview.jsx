@@ -142,8 +142,9 @@ export default function Overview({ payload, onNavigateTab }) {
           <div className="video-hud-panel">
             <TacticalVideoHUD
               isLive={true}
-              telemetry={payload?.uav_status}
+              telemetry={payload?.uav_status?.gps}
               objects={payload?.objects ?? []}
+              frameSize={{ width: payload?.uav_status?.frame_width, height: payload?.uav_status?.frame_height }}
               cameraMode={cameraMode}
               zoomLevel={ptzZoom}
               onZoomChange={setPtzZoom}
