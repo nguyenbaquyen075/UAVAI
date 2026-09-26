@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Bot, Pause, Play, Home, Hand, Radar, Route, Battery, Gauge, Mountain, Compass, AlertTriangle, PenLine, Undo2, Trash2, X } from "lucide-react";
+import { Bot, Pause, Play, Home, Hand, Radar, Route, Battery, Gauge, Mountain, AlertTriangle, PenLine, Undo2, Trash2, X } from "lucide-react";
 import { autopilotCommand, autopilotList, autopilotSimulateThreat, autopilotStart, autopilotStop, listMissions, listUAVs } from "../api";
+import { LiveFrame } from "./MultiMonitor";
 
 const BASE = [21.0285, 105.8542];
 // Màu trạng thái luôn đi kèm nhãn chữ
@@ -33,23 +34,54 @@ function fmtDuration(s) {
   return m < 60 ? `${m} phút` : `${Math.floor(m / 60)} giờ ${m % 60} phút`;
 }
 
+const INTERP_MS = 1000; // khớp nhịp cập nhật vị trí 1 giây -> UAV trượt đều giữa 2 lần cập nhật
+const TRAIL_POINTS = 90;  // vệt đường đã bay ~1,5 phút gần nhất
+
+// Biểu tượng drone nhìn từ trên xuống: mũi hướng lên = hướng bắc, xoay theo heading; cánh quạt quay bằng CSS
+const DRONE_SVG = `<svg viewBox="-22 -22 44 44" width="36" height="36" aria-hidden="true">
+  <g class="apd-arms"><line x1="-13" y1="-13" x2="13" y2="13"/><line x1="13" y1="-13" x2="-13" y2="13"/></g>
+  ${[[-13, -13], [13, -13], [13, 13], [-13, 13]]
+    .map(([x, y]) => `<g transform="translate(${x} ${y})"><circle r="7" class="apd-ring"/><g class="apd-rotor"><line x1="-6" y1="0" x2="6" y2="0"/></g></g>`)
+    .join("")}
+  <rect x="-6" y="-7" width="12" height="14" rx="4" class="apd-core"/>
+  <path d="M0 -15 L5 -8 L-5 -8 Z" class="apd-nose"/>
+</svg>`;
+
+function droneIcon(name) {
+  return L.divIcon({
+    className: "",
+    html: `<div class="apd"><span class="apd-halo"></span><span class="apd-body">${DRONE_SVG}</span><span class="apd-label">${name}</span></div>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+}
+
+const lerp = (a, b, t) => a + (b - a) * t;
+const metersPerPixel = (lat, zoom) => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+
 function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange, loop }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
-  const layerRef = useRef(null);
+  const staticLayerRef = useRef(null);
+  const trailLayerRef = useRef(null);
   const draftLayerRef = useRef(null);
+  const dronesRef = useRef(new Map()); // uav_id -> {marker, from, to, t0, angle}
+  const trailsRef = useRef(new Map()); // uav_id -> [[lat, lon], ...]
+  const staticKeyRef = useRef("");
   const fittedRef = useRef(null);
+  const [zoom, setZoom] = useState(14);
   const drawRef = useRef({});
-  drawRef.current = { drawing, draft, onDraftChange };
+  drawRef.current = { drawing, draft, onDraftChange, onSelect };
 
   useEffect(() => {
     const map = L.map(ref.current, { zoomControl: false, attributionControl: false, doubleClickZoom: false }).setView(BASE, 14);
     L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, maxNativeZoom: 18 }).addTo(map);
     L.control.zoom({ position: "bottomright" }).addTo(map);
     L.marker(BASE, {
-      icon: L.divIcon({ className: "", html: `<div class="ap-base">⌂ Căn cứ</div>`, iconSize: null, iconAnchor: [10, 10] }),
+      icon: L.divIcon({ className: "", html: `<div class="ap-base"><span class="ap-base-pulse"></span>⌂ Căn cứ</div>`, iconSize: null, iconAnchor: [10, 10] }),
     }).addTo(map);
-    layerRef.current = L.layerGroup().addTo(map);
+    trailLayerRef.current = L.layerGroup().addTo(map);
+    staticLayerRef.current = L.layerGroup().addTo(map);
     draftLayerRef.current = L.layerGroup().addTo(map);
     // Chế độ vẽ: click lên bản đồ để thêm điểm
     map.on("click", (e) => {
@@ -57,9 +89,134 @@ function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange
       if (!drawing || draft.length >= MAX_POINTS) return;
       onDraftChange([...draft, { lat: e.latlng.lat, lon: e.latlng.lng }]);
     });
+    map.on("zoomend", () => setZoom(map.getZoom()));
     mapRef.current = map;
-    return () => map.remove();
+
+    // Vòng hoạt hình: trượt drone từ vị trí cũ tới vị trí mới trong INTERP_MS
+    let raf;
+    const animate = () => {
+      const now = performance.now();
+      dronesRef.current.forEach((d) => {
+        const t = Math.min(1, (now - d.t0) / INTERP_MS);
+        d.marker.setLatLng([lerp(d.from[0], d.to[0], t), lerp(d.from[1], d.to[1], t)]);
+      });
+      raf = requestAnimationFrame(animate);
+    };
+    raf = requestAnimationFrame(animate);
+    return () => {
+      cancelAnimationFrame(raf);
+      map.remove();
+    };
   }, []);
+
+  // Drone: giữ 1 marker cho mỗi UAV, chỉ đổi đích/hướng/màu (không tạo lại -> không giật)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const alive = new Set();
+    states.forEach((s) => {
+      alive.add(s.uav_id);
+      const t = s.telemetry;
+      const to = [t.lat, t.lon];
+      let d = dronesRef.current.get(s.uav_id);
+      if (!d) {
+        const marker = L.marker(to, { icon: droneIcon(s.name) })
+          .on("click", () => !drawRef.current.drawing && drawRef.current.onSelect(s.uav_id))
+          .addTo(map);
+        d = { marker, from: to, to, t0: performance.now(), angle: t.heading_deg };
+        dronesRef.current.set(s.uav_id, d);
+      } else {
+        const cur = d.marker.getLatLng();
+        Object.assign(d, { from: [cur.lat, cur.lng], to, t0: performance.now() });
+        d.angle += ((t.heading_deg - (d.angle % 360) + 540) % 360) - 180; // xoay theo đường ngắn nhất
+      }
+      const [label, color] = MODE[s.mode] || MANUAL;
+      const el = d.marker.getElement()?.querySelector(".apd");
+      if (el) {
+        el.className = `apd m-${s.mode}${s.uav_id === selectedId ? " sel" : ""}`;
+        el.style.setProperty("--c", color);
+        el.querySelector(".apd-body").style.transform = `rotate(${d.angle}deg)`;
+      }
+      d.marker.setZIndexOffset(s.uav_id === selectedId ? 1000 : 0);
+      d.marker.unbindTooltip().bindTooltip(`${s.name} · ${label} · Pin ${Math.round(t.battery_pct)}% · ${t.altitude_m} m`, { direction: "top", offset: [0, -16] });
+
+      const trail = trailsRef.current.get(s.uav_id) || [];
+      const last = trail[trail.length - 1];
+      if (!last || last[0] !== to[0] || last[1] !== to[1]) trail.push(to);
+      trailsRef.current.set(s.uav_id, trail.slice(-TRAIL_POINTS));
+    });
+    dronesRef.current.forEach((d, id) => {
+      if (!alive.has(id)) {
+        d.marker.remove();
+        dronesRef.current.delete(id);
+        trailsRef.current.delete(id);
+      }
+    });
+
+    // Vệt đã bay: chia khúc, khúc cũ mờ dần
+    const trailLayer = trailLayerRef.current;
+    trailLayer.clearLayers();
+    trailsRef.current.forEach((pts, id) => {
+      const color = (MODE[states.find((s) => s.uav_id === id)?.mode] || MANUAL)[1];
+      const chunk = Math.max(2, Math.ceil(pts.length / 6));
+      for (let i = 0; i < pts.length - 1; i += chunk - 1) {
+        const seg = pts.slice(i, i + chunk);
+        if (seg.length > 1) L.polyline(seg, { color, weight: 3, opacity: 0.12 + 0.6 * (i / pts.length), interactive: false }).addTo(trailLayer);
+      }
+    });
+  }, [states, selectedId]);
+
+  // Lớp tĩnh: vùng tuần tra, đường bay (vạch chạy theo chiều bay), điểm bay, vùng quan sát + tia radar.
+  // Chỉ vẽ lại khi có thay đổi thật -> hiệu ứng CSS không bị khởi động lại mỗi giây.
+  useEffect(() => {
+    const layer = staticLayerRef.current;
+    if (!layer) return;
+    const key = JSON.stringify([
+      states.map((s) => [s.uav_id, s.route, s.waypoint_index, s.on_finish, s.investigation && [s.investigation.lat, s.investigation.lon]]),
+      selectedId,
+      drawing,
+      zoom,
+    ]);
+    if (key === staticKeyRef.current) return;
+    staticKeyRef.current = key;
+    layer.clearLayers();
+    states.forEach((s) => {
+      const sel = s.uav_id === selectedId;
+      const faded = drawing && sel; // đang vẽ đường mới cho UAV này -> làm mờ đường cũ
+      const route = s.route.map((p) => [p.lat, p.lon]);
+      const path = s.on_finish === "loop" ? [...route, route[0]] : route;
+      const [g0, g1] = s.geofence;
+      L.rectangle([[g0.lat, g0.lon], [g1.lat, g1.lon]], { color: "#facc15", weight: 1, dashArray: "6 6", fill: false, opacity: sel && !faded ? 0.8 : 0.3, interactive: false }).addTo(layer);
+      L.polyline(path, { color: "#22c55e", weight: sel ? 5 : 3, opacity: faded ? 0.15 : sel ? 0.35 : 0.2, interactive: false }).addTo(layer);
+      L.polyline(path, { color: "#bbf7d0", weight: sel ? 2 : 1.5, opacity: faded ? 0.2 : sel ? 0.95 : 0.5, interactive: false, className: "ap-route-flow" }).addTo(layer);
+      route.forEach((p, i) => {
+        const next = i === s.waypoint_index;
+        if (next && !faded) {
+          L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="ap-wp-next"></div>`, iconSize: [28, 28], iconAnchor: [14, 14] }), interactive: false }).addTo(layer);
+        }
+        L.circleMarker(p, { radius: next ? 7 : 5, color: "#0f172a", weight: 2, fillColor: next ? "#facc15" : "#22c55e", fillOpacity: faded ? 0.3 : 1, interactive: !drawing })
+          .bindTooltip(`Điểm ${i + 1}${next ? " (đang tới)" : ""}`)
+          .addTo(layer);
+      });
+      if (s.investigation) {
+        const c = [s.investigation.lat, s.investigation.lon];
+        const px = Math.round((2 * s.investigation.radius_m) / metersPerPixel(c[0], zoom));
+        L.circle(c, { radius: s.investigation.radius_m, color: "#ef4444", weight: 2, dashArray: "4 4", fillOpacity: 0.06, interactive: false }).addTo(layer);
+        L.marker(c, { icon: L.divIcon({ className: "", html: `<div class="ap-radar" style="width:${px}px;height:${px}px"></div>`, iconSize: [px, px], iconAnchor: [px / 2, px / 2] }), interactive: false }).addTo(layer);
+        L.marker(c, { icon: L.divIcon({ className: "", html: `<div class="ap-threat">!</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }) })
+          .bindTooltip("Mục tiêu nguy hiểm")
+          .addTo(layer);
+      }
+    });
+
+    // Căn khung theo lộ trình UAV đang chọn (1 lần mỗi khi đổi UAV; không căn lại khi đang vẽ)
+    const sel = states.find((s) => s.uav_id === selectedId);
+    if (sel && fittedRef.current !== selectedId && !drawing) {
+      const [g0, g1] = sel.geofence;
+      mapRef.current.fitBounds([[g0.lat, g0.lon], [g1.lat, g1.lon], [sel.telemetry.lat, sel.telemetry.lon]], { padding: [30, 30] });
+      fittedRef.current = selectedId;
+    }
+  }, [states, selectedId, drawing, zoom]);
 
   // Đường đang vẽ: điểm đánh số, kéo để sửa vị trí
   useEffect(() => {
@@ -69,7 +226,7 @@ function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange
     if (!drawing) return;
     const pts = draft.map((p) => [p.lat, p.lon]);
     if (pts.length > 1) {
-      L.polyline(loop && pts.length > 2 ? [...pts, pts[0]] : pts, { color: DRAFT_COLOR, weight: 3, dashArray: "8 6" }).addTo(layer);
+      L.polyline(loop && pts.length > 2 ? [...pts, pts[0]] : pts, { color: DRAFT_COLOR, weight: 3, dashArray: "8 6", className: "ap-route-flow draft" }).addTo(layer);
     }
     draft.forEach((p, i) => {
       L.marker([p.lat, p.lon], {
@@ -91,62 +248,23 @@ function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange
     ref.current?.classList.toggle("ap-drawing", !!drawing);
   }, [drawing]);
 
-  useEffect(() => {
-    const layer = layerRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-    states.forEach((s) => {
-      const sel = s.uav_id === selectedId;
-      const [label, color] = MODE[s.mode] || MANUAL;
-      const route = s.route.map((p) => [p.lat, p.lon]);
-      const [g0, g1] = s.geofence;
-      const faded = drawing && sel; // đang vẽ đường mới cho UAV này -> làm mờ đường cũ
-      L.rectangle([[g0.lat, g0.lon], [g1.lat, g1.lon]], { color: "#facc15", weight: 1, dashArray: "6 6", fill: false, opacity: sel && !faded ? 0.8 : 0.3, interactive: false }).addTo(layer);
-      L.polyline(s.on_finish === "loop" ? [...route, route[0]] : route, { color: "#22c55e", weight: sel ? 3 : 2, opacity: faded ? 0.25 : sel ? 0.95 : 0.45, interactive: false }).addTo(layer);
-      route.forEach((p, i) =>
-        L.circleMarker(p, {
-          radius: i === s.waypoint_index ? 7 : 5,
-          color: "#0f172a",
-          weight: 2,
-          fillColor: i === s.waypoint_index ? "#facc15" : "#22c55e",
-          fillOpacity: faded ? 0.3 : 1,
-          interactive: !drawing,
-        })
-          .bindTooltip(`Điểm ${i + 1}${i === s.waypoint_index ? " (đang tới)" : ""}`)
-          .addTo(layer)
-      );
-      if (s.investigation) {
-        const c = [s.investigation.lat, s.investigation.lon];
-        L.circle(c, { radius: s.investigation.radius_m, color: "#ef4444", weight: 2, dashArray: "4 4", fillOpacity: 0.08, interactive: false }).addTo(layer);
-        L.marker(c, { icon: L.divIcon({ className: "", html: `<div class="ap-threat">!</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }) })
-          .bindTooltip("Mục tiêu nguy hiểm")
-          .addTo(layer);
-      }
-      const t = s.telemetry;
-      L.marker([t.lat, t.lon], {
-        icon: L.divIcon({
-          className: "",
-          html: `<div class="ap-uav ${sel ? "sel" : ""}" style="--c:${color}"><span class="ap-arrow" style="transform:rotate(${t.heading_deg}deg)">▲</span>${s.name}</div>`,
-          iconSize: null,
-          iconAnchor: [10, 10],
-        }),
-        zIndexOffset: sel ? 1000 : 0,
-      })
-        .bindTooltip(`${s.name} · ${label} · Pin ${Math.round(t.battery_pct)}%`)
-        .on("click", () => !drawRef.current.drawing && onSelect(s.uav_id))
-        .addTo(layer);
-    });
-
-    // Căn khung theo lộ trình UAV đang chọn (1 lần mỗi khi đổi UAV; không căn lại khi đang vẽ)
-    const sel = states.find((s) => s.uav_id === selectedId);
-    if (sel && fittedRef.current !== selectedId && !drawing) {
-      const [g0, g1] = sel.geofence;
-      mapRef.current.fitBounds([[g0.lat, g0.lon], [g1.lat, g1.lon], [sel.telemetry.lat, sel.telemetry.lon]], { padding: [30, 30] });
-      fittedRef.current = selectedId;
-    }
-  }, [states, selectedId, drawing]);
-
   return <div ref={ref} className="ap-map" />;
+}
+
+// Vòng đo pin nhỏ (màu theo mức, luôn kèm số %)
+function BatteryRing({ pct }) {
+  const r = 16;
+  const c = 2 * Math.PI * r;
+  const color = pct < 25 ? "#ef4444" : pct < 50 ? "#f59e0b" : "#22c55e";
+  return (
+    <div className="ap-batt" title={`Pin ${Math.round(pct)}%`}>
+      <svg width="42" height="42" viewBox="0 0 42 42">
+        <circle cx="21" cy="21" r={r} className="ap-batt-track" />
+        <circle cx="21" cy="21" r={r} stroke={color} className="ap-batt-fill" strokeDasharray={`${(pct / 100) * c} ${c}`} transform="rotate(-90 21 21)" />
+      </svg>
+      <span>{Math.round(pct)}%</span>
+    </div>
+  );
 }
 
 export default function AutoPatrol() {
@@ -234,6 +352,20 @@ export default function AutoPatrol() {
   const lengthM = routeLengthM(draft, loop);
   const canStart = form.source === "draw" ? draft.length >= 2 : !!form.mission_id;
 
+  // Tiến độ tới điểm kế tiếp: khoảng cách còn lại, % chặng, thời gian dự kiến
+  let nextWp = null;
+  if (sel && sel.mode === "patrol") {
+    const r = sel.route;
+    const here = L.latLng(sel.telemetry.lat, sel.telemetry.lon);
+    const to = L.latLng(r[sel.waypoint_index].lat, r[sel.waypoint_index].lon);
+    const prevIdx = (sel.waypoint_index - 1 + r.length) % r.length;
+    const leg = L.latLng(r[prevIdx].lat, r[prevIdx].lon).distanceTo(to) || 1;
+    const left = here.distanceTo(to);
+    const mps = sel.telemetry.speed_kmh / 3.6 || 1;
+    nextWp = { n: sel.waypoint_index + 1, left, pct: Math.max(0, Math.min(100, 100 - (left / leg) * 100)), eta: left / mps };
+  }
+  const modeCounts = named.reduce((acc, s) => ({ ...acc, [s.mode]: (acc[s.mode] || 0) + 1 }), {});
+
   const routeForm = (
     <div className="ap-form">
       <div className="ap-seg" role="tablist">
@@ -312,6 +444,20 @@ export default function AutoPatrol() {
 
   return (
     <div className="ap-page">
+      <div className="ap-summary">
+        <span className="ap-live"><i /> LIVE</span>
+        <span className="ap-summary-total">
+          <Bot size={14} /> {states.length}/{uavs.length} UAV đang tự lái
+        </span>
+        {Object.entries(MODE).map(([k, [label, color]]) =>
+          modeCounts[k] ? (
+            <span key={k} className="ap-summary-chip" style={{ "--c": color }}>
+              <i /> {label} <b>{modeCounts[k]}</b>
+            </span>
+          ) : null
+        )}
+        <span className="ap-summary-note">Vị trí cập nhật mỗi giây</span>
+      </div>
       <div className="ap-grid">
         {/* Danh sách UAV */}
         <section className="dashboard-panel ap-list">
@@ -371,13 +517,32 @@ export default function AutoPatrol() {
             routeForm
           ) : (
             <>
+              <div className="ap-cam">
+                <LiveFrame uavId={selectedId} />
+                <span className="ap-cam-tag"><i /> CAMERA · {selUav?.name}</span>
+                <span className="ap-cam-hud">
+                  ALT {sel.telemetry.altitude_m}m · {sel.telemetry.speed_kmh}km/h · HDG {Math.round(sel.telemetry.heading_deg)}°
+                </span>
+              </div>
               <div className="ap-stats">
+                <BatteryRing pct={sel.telemetry.battery_pct} />
                 <div><Route size={13} /> Điểm {sel.waypoint_index + 1}/{sel.waypoint_total} · vòng {sel.laps}</div>
-                <div><Battery size={13} /> {Math.round(sel.telemetry.battery_pct)}%</div>
                 <div><Mountain size={13} /> {sel.telemetry.altitude_m} m</div>
                 <div><Gauge size={13} /> {sel.telemetry.speed_kmh} km/h</div>
-                <div><Compass size={13} /> {sel.telemetry.heading_deg}°</div>
               </div>
+              {nextWp && (
+                <div className="ap-next">
+                  <div className="ap-next-head">
+                    <span>Tới điểm {nextWp.n}</span>
+                    <span>
+                      {nextWp.left >= 1000 ? `${(nextWp.left / 1000).toFixed(2)} km` : `${Math.round(nextWp.left)} m`} · còn ~{Math.max(1, Math.round(nextWp.eta))} giây
+                    </span>
+                  </div>
+                  <div className="ap-next-track">
+                    <span style={{ width: `${nextWp.pct}%` }} />
+                  </div>
+                </div>
+              )}
               <div className="ap-mission">
                 {sel.mission_id ? `Lộ trình: ${missionName(sel.mission_id)}` : "Đường bay vẽ tay"} · hết đường thì {sel.on_finish === "loop" ? "lặp lại" : "về căn cứ"}
               </div>
@@ -424,8 +589,8 @@ export default function AutoPatrol() {
 
               <div className="ap-events">
                 <span className="ov-stat-title">Nhật ký tự lái</span>
-                {sel.events.map((e, i) => (
-                  <div key={i} className="ap-event">
+                {sel.events.map((e) => (
+                  <div key={`${e.time}|${e.text}`} className="ap-event">
                     <span className="ap-event-time">{fmtClock(e.time)}</span>
                     <i style={{ background: EVENT_COLOR[e.kind] || "#22c55e" }} />
                     <span className="ap-event-text" title={e.text}>{e.text}</span>

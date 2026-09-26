@@ -16,7 +16,7 @@ const NEW_UAV = "__new__";
 const autoColumns = (n) => (n <= 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4);
 
 // Poll từng frame JPEG: tải xong frame này mới xin frame kế — tự giãn nhịp khi mạng/CPU chậm
-function LiveFrame({ uavId }) {
+export function LiveFrame({ uavId }) {
   const [src, setSrc] = useState(null);
   const [lost, setLost] = useState(false);
   const timer = useRef(null);

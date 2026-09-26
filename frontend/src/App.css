@@ -19906,3 +19906,99 @@ td.zone-cell,
 .ap-rules li { align-items: center; min-width: 0; }
 .ap-rules li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ap-rules svg { margin-top: 0; }
+
+/* ===== Tự lái tuần tra — hiệu ứng sống động ===== */
+.ap-page { display: flex; flex-direction: column; gap: 12px; }
+.ap-grid { flex: 1; min-height: 0; }
+.ap-summary {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 14px; background: #131b2e;
+  border: 1px solid #232f48; border-radius: 10px; font-size: 12px; color: #cbd5e1;
+}
+.ap-live { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; color: #f87171; letter-spacing: 1px; font-size: 11px; }
+.ap-live i { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; animation: ap-blink 1.2s ease-in-out infinite; }
+.ap-summary-total { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: #f8fafc; white-space: nowrap; }
+.ap-summary-total svg { color: #4ade80; }
+.ap-summary-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 12px; white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); background: color-mix(in srgb, var(--c) 12%, transparent);
+}
+.ap-summary-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.ap-summary-chip b { color: #f8fafc; }
+.ap-summary-note { margin-left: auto; font-size: 11px; color: #64748b; white-space: nowrap; }
+
+/* Drone trên bản đồ */
+.apd { position: relative; width: 36px; height: 36px; --c: #22c55e; cursor: pointer; }
+.apd-halo {
+  position: absolute; inset: -10px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--c) 45%, transparent) 0%, transparent 70%);
+  animation: ap-halo 1.8s ease-out infinite;
+}
+.apd.m-investigate .apd-halo { animation-duration: 0.8s; }
+.apd.m-landed .apd-halo { animation: none; opacity: 0.25; }
+.apd-body { position: absolute; inset: 0; transition: transform 0.9s linear; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7)); }
+.apd-arms line { stroke: #cbd5e1; stroke-width: 3; stroke-linecap: round; }
+.apd-ring { fill: rgba(15, 23, 42, 0.75); stroke: var(--c); stroke-width: 1.5; }
+.apd-rotor { animation: ap-spin 0.18s linear infinite; transform-box: fill-box; transform-origin: center; }
+.apd-rotor line { stroke: #f8fafc; stroke-width: 2; stroke-linecap: round; opacity: 0.9; }
+.apd.m-hold .apd-rotor { animation-duration: 0.5s; }
+.apd.m-landed .apd-rotor { animation: none; }
+.apd-core { fill: #0f172a; stroke: var(--c); stroke-width: 2; }
+.apd-nose { fill: var(--c); }
+.apd-label {
+  position: absolute; top: 38px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; font-weight: 800;
+  color: #f8fafc; background: rgba(15, 23, 42, 0.9); border: 1px solid var(--c); border-radius: 8px; padding: 1px 6px;
+}
+.apd.sel .apd-label { background: var(--c); color: #052e16; }
+.apd.sel .apd-halo { inset: -16px; }
+
+.ap-route-flow { stroke-dasharray: 8 10; animation: ap-flow 0.9s linear infinite; }
+.ap-route-flow.draft { animation-duration: 1.4s; }
+.ap-wp-next { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #facc15; animation: ap-ping 1.6s ease-out infinite; }
+.ap-radar {
+  border-radius: 50%; background: conic-gradient(from 0deg, rgba(239, 68, 68, 0.55), rgba(239, 68, 68, 0) 75deg, transparent 360deg);
+  animation: ap-spin 2.4s linear infinite;
+}
+.ap-base { position: relative; }
+.ap-base-pulse { position: absolute; left: 2px; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; border: 2px solid #ef4444; animation: ap-ping 2.2s ease-out infinite; }
+
+/* Bảng điều khiển */
+.ap-cam { position: relative; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: #05080c; border: 1px solid #1e293b; flex-shrink: 0; }
+.ap-cam-tag {
+  position: absolute; top: 6px; left: 6px; display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800;
+  color: #f8fafc; background: rgba(0, 0, 0, 0.6); border-radius: 4px; padding: 2px 6px; white-space: nowrap;
+}
+.ap-cam-tag i { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; animation: ap-blink 1s ease-in-out infinite; }
+.ap-cam-hud {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px; font-size: 10px; font-family: 'JetBrains Mono', monospace;
+  color: #4ade80; background: linear-gradient(transparent, rgba(0, 0, 0, 0.85)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ap-stats { grid-template-columns: 46px 1fr 1fr; align-items: stretch; }
+.ap-stats .ap-batt { grid-row: span 2; grid-column: 1; }
+.ap-stats .ap-batt + div { grid-column: 2 / -1; }
+.ap-stats div.ap-batt { background: none; border: none; padding: 0; position: relative; display: grid; place-items: center; }
+.ap-batt span { position: absolute; font-size: 10px; font-weight: 800; color: #f8fafc; font-family: 'JetBrains Mono', monospace; }
+.ap-batt-track { fill: none; stroke: #1e293b; stroke-width: 5; }
+.ap-batt-fill { fill: none; stroke-width: 5; stroke-linecap: round; transition: stroke-dasharray 1s linear; }
+.ap-next { display: flex; flex-direction: column; gap: 5px; }
+.ap-next-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: #94a3b8; white-space: nowrap; }
+.ap-next-head span:last-child { font-family: 'JetBrains Mono', monospace; color: #e2e8f0; }
+.ap-next-track { height: 6px; border-radius: 3px; background: #1e293b; overflow: hidden; }
+.ap-next-track span {
+  display: block; height: 100%; border-radius: 3px; transition: width 1s linear;
+  background: repeating-linear-gradient(-45deg, #22c55e 0 8px, #16a34a 8px 16px); background-size: 200% 100%; animation: ap-stripes 1s linear infinite;
+}
+.ap-event { animation: ap-slide-in 0.45s ease-out; }
+
+@keyframes ap-spin { to { transform: rotate(360deg); } }
+@keyframes ap-flow { from { stroke-dashoffset: 18; } to { stroke-dashoffset: 0; } }
+@keyframes ap-halo { 0% { transform: scale(0.6); opacity: 0.9; } 100% { transform: scale(1.25); opacity: 0; } }
+@keyframes ap-ping { 0% { transform: scale(0.7); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+@keyframes ap-blink { 50% { opacity: 0.25; } }
+@keyframes ap-stripes { to { background-position: -22px 0; } }
+@keyframes ap-slide-in { from { transform: translateX(14px); opacity: 0; background: rgba(34, 197, 94, 0.25); } to { transform: none; opacity: 1; background: transparent; } }
+
+/* Người dùng bật "giảm chuyển động" trong hệ điều hành -> tắt hiệu ứng */
+@media (prefers-reduced-motion: reduce) {
+  .apd-halo, .apd-rotor, .ap-route-flow, .ap-wp-next, .ap-radar, .ap-base-pulse, .ap-live i, .ap-cam-tag i,
+  .ap-next-track span, .ap-event, .ap-threat { animation: none !important; }
+  .apd-body, .ap-batt-fill, .ap-next-track span { transition: none !important; }
+}
