@@ -502,3 +502,19 @@ export async function getAnalyticsStats(days = 7) {
   } catch {}
   return null;
 }
+
+// --- Tự lái tuần tra (không có dữ liệu mẫu dự phòng: lệnh điều khiển phải báo lỗi thật) ---
+async function apiJson(url, options) {
+  const r = await fetch(url, options);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `Lỗi ${r.status}`);
+  return data;
+}
+const postJson = (url, body) =>
+  apiJson(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+
+export const autopilotList = () => apiJson("/api/autopilot");
+export const autopilotStart = (uavId, opts) => postJson(`/api/autopilot/${uavId}/start`, opts);
+export const autopilotCommand = (uavId, action) => postJson(`/api/autopilot/${uavId}/command`, { action });
+export const autopilotStop = (uavId) => postJson(`/api/autopilot/${uavId}/stop`);
+export const autopilotSimulateThreat = (uavId) => postJson(`/api/autopilot/${uavId}/simulate-threat`);

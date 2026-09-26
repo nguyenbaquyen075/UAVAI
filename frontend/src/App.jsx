@@ -23,6 +23,7 @@ import {
   FileText,
   BarChart2,
   Grid2x2,
+  Bot,
 } from "lucide-react";
 import { useDetectionSocket } from "./hooks/useDetectionSocket";
 import { authLogout, authMe } from "./api";
@@ -31,6 +32,7 @@ import AccountMenu from "./components/AccountMenu";
 import Overview from "./pages/Overview";
 import UAVList from "./pages/UAVList";
 import Missions from "./pages/Missions";
+import AutoPatrol from "./pages/AutoPatrol";
 import LiveMonitoring from "./pages/LiveMonitoring";
 import MultiMonitor from "./pages/MultiMonitor";
 import Targets from "./pages/Targets";
@@ -46,6 +48,7 @@ const TABS = [
   { key: "overview", label: "Tổng quan", Icon: LayoutGrid },
   { key: "uavs", label: "UAV", Icon: Plane },
   { key: "missions", label: "Nhiệm vụ", Icon: ClipboardList },
+  { key: "autopilot", label: "Tự lái tuần tra", Icon: Bot },
   { key: "tracking", label: "Mục tiêu", Icon: Target },
   { key: "live", label: "Theo dõi trực tiếp", Icon: Video },
   { key: "multi", label: "Đa màn hình", Icon: Grid2x2 },
@@ -187,6 +190,8 @@ function Dashboard({ user, onLogout }) {
                   ? "TỔNG QUAN"
                   : tab === "missions"
                   ? "NHIỆM VỤ"
+                  : tab === "autopilot"
+                  ? "AI TỰ LÁI TUẦN TRA"
                   : tab === "tracking"
                   ? "THEO DÕI MỤC TIÊU"
                   : tab === "live"
@@ -240,6 +245,7 @@ function Dashboard({ user, onLogout }) {
             {tab === "overview" && <Overview payload={payload} onNavigateTab={setTab} />}
             {tab === "uavs" && <UAVList activeUavId={payload?.active_uav_id} payload={payload} onOpenAlerts={() => setTab("logs")} />}
             {tab === "missions" && <Missions payload={payload} onNavigateTab={setTab} />}
+            {tab === "autopilot" && <AutoPatrol />}
             {tab === "tracking" && <Targets payload={payload} />}
             {tab === "live" && <LiveMonitoring payload={payload} />}
             {tab === "multi" && <MultiMonitor />}

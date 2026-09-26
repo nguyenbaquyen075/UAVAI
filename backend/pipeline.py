@@ -71,10 +71,12 @@ class FeedPool:
     IDLE_CLOSE_S = 20
     TILE_WIDTH = 640  # thu nhỏ trước khi mã hoá JPEG, đỡ CPU/băng thông khi nhiều khung
 
-    def __init__(self, telemetry=None):
+    def __init__(self, telemetry=None, on_threat=None):
         self.telemetry = telemetry
+        self.on_threat = on_threat
         self.lock = threading.Lock()
         self.pipelines = {}  # uav_id -> [source, DetectionPipeline, last_access]
+        self.pinned = set()  # UAV đang tự lái: AI phải canh liên tục dù không ai mở khung xem
 
     def get(self, uav_id, source):
         now = time.time()
@@ -86,11 +88,12 @@ class FeedPool:
             if entry is None:
                 p = DetectionPipeline()
                 p.telemetry = self.telemetry
+                p.on_threat = self.on_threat
                 p.set_active_uav(uav_id, source)
                 p.start()
                 entry = self.pipelines[uav_id] = [source, p, now]
             entry[2] = now
-            for k in [k for k, e in self.pipelines.items() if now - e[2] > self.IDLE_CLOSE_S]:
+            for k in [k for k, e in self.pipelines.items() if now - e[2] > self.IDLE_CLOSE_S and k not in self.pinned]:
                 self._close(self.pipelines.pop(k)[1])
             return entry[1]
 
@@ -179,6 +182,7 @@ class DetectionPipeline:
         self.running = True
         self.thread = threading.Thread(target=self._loop, daemon=True)
         self.telemetry = None  # gán từ main.py (TelemetryHub)
+        self.on_threat = None  # gán từ main.py: (uav_id, (lat, lon), class_name) -> Autopilot.report_threat
 
     def start(self):
         self.thread.start()
@@ -216,6 +220,7 @@ class DetectionPipeline:
         elif time.time() - self._target_last_flush.get(track_id, 0) >= TARGET_FLUSH_INTERVAL_S:
             db.touch_target(target_id, threat, distance_m, lat, lon, heading, now_iso)
             self._target_last_flush[track_id] = time.time()
+        return (lat, lon) if lat is not None else None
 
     def _loop(self):
         while self.running:
@@ -278,7 +283,10 @@ class DetectionPipeline:
                     with self.lock:
                         hist = self.track_history.setdefault(track_id, deque(maxlen=200))
                         hist.append({"timestamp": now_iso, "distance_m": distance_m, "class": class_name})
-                    self._update_target(track_id, class_name, distance_m, sev, x1, x2, frame.shape[1], now_iso)
+                    target_pos = self._update_target(track_id, class_name, distance_m, sev, x1, x2, frame.shape[1], now_iso)
+                    # mục tiêu nguy hiểm -> báo chế độ tự lái (nếu UAV này đang tự tuần tra) để bay tới quan sát
+                    if sev == "red" and target_pos and self.on_threat:
+                        self.on_threat(self.active_uav_id, target_pos, class_name)
 
             annotated = results[0].plot()
             ok, buf = cv2.imencode(".jpg", annotated)

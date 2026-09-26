@@ -60,6 +60,7 @@ class TelemetryHub:
 
     def __init__(self, get_uav_ids):
         self.get_uav_ids = get_uav_ids
+        self.override = None  # gán từ main.py: Autopilot.telemetry — UAV đang tự lái lấy vị trí từ bộ điều khiển
         self.trails = defaultdict(lambda: deque(maxlen=500))
         self.running = True
         self.thread = threading.Thread(target=self._loop, daemon=True)
@@ -70,11 +71,11 @@ class TelemetryHub:
     def _loop(self):
         while self.running:
             for uav_id in self.get_uav_ids():
-                self.trails[uav_id].append(simulate(uav_id))
+                self.trails[uav_id].append(self.position(uav_id))
             time.sleep(1)
 
     def position(self, uav_id):
-        return simulate(uav_id)
+        return (self.override and self.override(uav_id)) or simulate(uav_id)
 
     def get_trail(self, uav_id):
         return list(self.trails[uav_id])

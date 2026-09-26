@@ -19804,3 +19804,87 @@ td.zone-cell,
 .ov-hbar-val { text-align: right; font-family: 'JetBrains Mono', monospace; color: #cbd5e1; font-size: 11px; }
 .ov-stack { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; background: #1e293b; }
 .ov-stack span { display: block; min-width: 3px; }
+
+/* ===== AI tự lái tuần tra ===== */
+.ap-page { padding: 16px 20px; color: #e2e8f0; height: 100%; box-sizing: border-box; }
+.ap-grid { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 340px); gap: 14px; height: 100%; min-height: 560px; }
+@media (max-width: 1366px) { .ap-grid { grid-template-columns: minmax(0, 200px) minmax(0, 1fr) minmax(0, 300px); } }
+.ap-list, .ap-control, .ap-map-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ap-list { gap: 6px; overflow-y: auto; }
+.ap-count { font-size: 11px; color: #4ade80; white-space: nowrap; }
+.ap-uav-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px;
+  background: #0f172a; border: 1px solid #1e293b; color: inherit; font: inherit; cursor: pointer; text-align: left;
+}
+.ap-uav-row:hover { border-color: #334155; }
+.ap-uav-row.active { border-color: #22c55e; background: #102a1c; }
+.ap-uav-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ap-uav-name strong { font-size: 13px; white-space: nowrap; }
+.ap-uav-name small { font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.ap-map-panel { position: relative; }
+.ap-map { flex: 1; min-height: 420px; border-radius: 8px; overflow: hidden; }
+.ap-map-hint {
+  position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%); z-index: 500; white-space: nowrap;
+  background: rgba(15, 23, 42, 0.92); border: 1px solid #334155; border-radius: 8px; padding: 8px 14px; font-size: 12px; color: #cbd5e1;
+}
+.ap-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: #94a3b8; }
+.ap-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ap-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.ap-legend i.dash { border: 1px dashed #facc15; background: transparent; }
+.ap-base, .ap-uav {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; font-weight: 700;
+  background: rgba(15, 23, 42, 0.92); border-radius: 10px; padding: 2px 8px 2px 5px; color: #f8fafc;
+}
+.ap-base { border: 1px solid #ef4444; color: #fca5a5; }
+.ap-uav { border: 2px solid var(--c); cursor: pointer; }
+.ap-uav.sel { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.35); }
+.ap-arrow { display: inline-block; color: var(--c); font-size: 11px; line-height: 1; }
+.ap-threat {
+  width: 22px; height: 22px; border-radius: 50%; background: #ef4444; color: #fff; font-weight: 900; display: flex;
+  align-items: center; justify-content: center; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.35); animation: mm-alarm 1s infinite alternate;
+}
+
+.ap-control { gap: 12px; overflow-y: auto; }
+.ap-msg { font-size: 12px; padding: 8px 10px; border-radius: 6px; line-height: 1.4; }
+.ap-msg.ok { color: #86efac; background: rgba(22, 101, 52, 0.3); border: 1px solid #166534; }
+.ap-msg.error { color: #fca5a5; background: rgba(127, 29, 29, 0.35); border: 1px solid #7f1d1d; }
+.ap-form { display: flex; flex-direction: column; gap: 10px; }
+.ap-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: #94a3b8; min-width: 0; }
+.ap-form select, .ap-form input {
+  background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; font-size: 13px; min-width: 0;
+}
+.ap-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ap-rules { margin: 0; padding: 10px 12px; list-style: none; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; display: flex; flex-direction: column; gap: 6px; }
+.ap-rules li { display: flex; gap: 6px; align-items: flex-start; font-size: 11px; color: #94a3b8; line-height: 1.4; }
+.ap-rules svg { flex-shrink: 0; margin-top: 2px; color: #4ade80; }
+.ap-note { font-size: 12px; color: #94a3b8; margin: 0; }
+.ap-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ap-stats div {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #e2e8f0;
+  background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 7px 9px; white-space: nowrap;
+}
+.ap-stats div:first-child { grid-column: 1 / -1; }
+.ap-stats svg { color: #4ade80; flex-shrink: 0; }
+.ap-mission { font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-alert { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #fecaca; background: rgba(127, 29, 29, 0.4); border: 1px solid #b91c1c; border-radius: 6px; padding: 8px 10px; }
+.ap-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.ap-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 8px; border-radius: 7px; font: inherit;
+  font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; white-space: nowrap;
+}
+.ap-btn:hover:not(:disabled) { border-color: #64748b; }
+.ap-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ap-btn.primary { background: #22c55e; border-color: #22c55e; color: #052e16; font-size: 14px; padding: 11px; }
+.ap-btn.primary:hover:not(:disabled) { background: #16a34a; }
+.ap-btn.warn { color: #fbbf24; border-color: #92400e; }
+.ap-btn.danger { color: #f87171; border-color: #7f1d1d; }
+.ap-btn.ghost { color: #94a3b8; border-style: dashed; font-weight: 600; }
+.ap-events { display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+.ap-event { display: grid; grid-template-columns: auto 8px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 12px; padding: 4px 0; border-bottom: 1px solid #1a2234; }
+.ap-event i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.ap-event-time { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64748b; }
+.ap-event-text { color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-actions { grid-template-columns: 1fr 1fr; }
+.ap-actions .ap-btn.danger { grid-column: 1 / -1; }
+.ap-btn { min-width: 0; }

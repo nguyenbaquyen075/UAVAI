@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 import auth
+import autopilot as ap_mod
 import db
 from pipeline import DetectionPipeline, FeedPool
 from settings_store import settings
@@ -79,7 +80,26 @@ def auth_change_password(body: dict, request: Request):
 pipeline = DetectionPipeline()
 telemetry = TelemetryHub(get_uav_ids=lambda: [u["id"] for u in db.list_uavs()])
 pipeline.telemetry = telemetry
-feeds = FeedPool(telemetry)
+
+
+def _on_autopilot_mode(uav_id, mode):
+    """Đồng bộ trạng thái UAV trong DB theo chế độ tự lái (để các trang khác hiển thị đúng)."""
+    if mode is None:
+        return  # tắt tự lái -> chuyển điều khiển tay, giữ nguyên trạng thái hiện có
+    uav = next((u for u in db.list_uavs() if u["id"] == uav_id), None)
+    if uav is None:
+        return
+    if mode == "landed" and uav["status"] != "ready":
+        db.update_uav(uav_id, {"status": "ready", "flying_since": None})
+    elif mode != "landed" and uav["status"] != "flying":
+        db.update_uav(uav_id, {"status": "flying", "flying_since": _now_iso()})
+
+
+autopilot = ap_mod.Autopilot(on_mode_change=lambda uid, mode: _on_autopilot_mode(uid, mode))
+telemetry.override = autopilot.telemetry
+pipeline.on_threat = lambda uid, pos, cls: autopilot.report_threat(uid, pos, CLASS_VI.get(cls, cls))
+feeds = FeedPool(telemetry, on_threat=pipeline.on_threat)
+CLASS_VI = {"person": "người", "car": "ô tô", "motorcycle": "xe máy", "bus": "xe buýt", "truck": "xe tải"}
 
 
 # ponytail: dữ liệu demo để giao diện có nội dung ngay lần chạy đầu (chỉ chèn khi DB rỗng).
@@ -308,6 +328,71 @@ def get_uav_telemetry(uav_id: int):
 @app.get("/api/uavs/{uav_id}/trail")
 def get_uav_trail(uav_id: int):
     return telemetry.get_trail(uav_id)
+
+
+# --- Tự lái tuần tra (giả lập, xem autopilot.py) ---
+
+@app.get("/api/autopilot")
+def autopilot_list():
+    return list(autopilot.all_states().values())
+
+
+@app.post("/api/autopilot/{uav_id}/start")
+def autopilot_start(uav_id: int, body: dict):
+    uav = next((u for u in db.list_uavs() if u["id"] == uav_id), None)
+    if uav is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy UAV")
+    if uav["status"] in ("maintenance", "offline"):
+        raise HTTPException(status_code=400, detail="UAV đang bảo trì/offline, không thể tự lái")
+    mission = next((m for m in db.list_missions() if m["id"] == body.get("mission_id")), None)
+    if mission is None:
+        raise HTTPException(status_code=400, detail="Chọn nhiệm vụ có lộ trình để tuần tra")
+    route = [(w["lat"], w["lon"]) for w in mission["waypoints"]]
+    current = telemetry.position(uav_id)
+    try:
+        autopilot.start(uav_id, route, (current["lat"], current["lon"]), current["battery_pct"], mission["id"],
+                        float(body.get("altitude_m") or ap_mod.PATROL_ALT_M), body.get("speed_kmh"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # AI phải canh camera của UAV này suốt thời gian tự lái
+    if uav_id != pipeline.active_uav_id and uav["video_source"]:
+        feeds.pinned.add(uav_id)
+        feeds.get(uav_id, uav["video_source"])
+    return autopilot.get(uav_id)
+
+
+@app.post("/api/autopilot/{uav_id}/command")
+def autopilot_command(uav_id: int, body: dict):
+    try:
+        autopilot.command(uav_id, body.get("action"))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="UAV này không ở chế độ tự lái")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return autopilot.get(uav_id)
+
+
+@app.post("/api/autopilot/{uav_id}/stop")
+def autopilot_stop(uav_id: int):
+    autopilot.stop(uav_id)
+    feeds.pinned.discard(uav_id)
+    return {"ok": True}
+
+
+@app.post("/api/autopilot/{uav_id}/simulate-threat")
+def autopilot_simulate_threat(uav_id: int):
+    """Công cụ thử: giả 1 mục tiêu nguy hiểm trên lộ trình (dùng khi YOLO tắt hoặc video không có tình huống)."""
+    state = autopilot.get(uav_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="UAV này không ở chế độ tự lái")
+    # đặt mục tiêu giả cạnh điểm tuần tra kế tiếp -> luôn nằm trong vùng tuần tra
+    wp = state["route"][state["waypoint_index"]]
+    target = ap_mod._offset((wp["lat"], wp["lon"]), 40, 40)
+    if not autopilot.report_threat(uav_id, target, "mục tiêu giả lập"):
+        raise HTTPException(status_code=409, detail=(
+            f"UAV không nhận mục tiêu mới (chế độ: {state['mode_label']}). Chỉ nhận khi đang tuần tra, "
+            f"và không soi lại cùng chỗ trong {int(ap_mod.THREAT_COOLDOWN_S)} giây sau lần quan sát trước"))
+    return autopilot.get(uav_id)
 
 
 # --- Missions ---
