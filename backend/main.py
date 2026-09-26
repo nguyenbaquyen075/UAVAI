@@ -3,10 +3,11 @@ import json
 import time
 from collections import Counter
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+import auth
 import db
 from pipeline import DetectionPipeline, FeedPool
 from settings_store import settings
@@ -16,6 +17,64 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+
+# --- Đăng nhập ---
+# Mọi API, /video và /ws đều cần đăng nhập (cookie "session" HttpOnly). Giao diện gọi qua proxy của
+# Vite (cùng origin) nên cookie tự đi kèm cả với <img> video và WebSocket.
+PUBLIC_PATHS = {"/api/auth/login"}
+ADMIN_ONLY = {("PUT", "/api/settings")}  # người giám sát điều khiển được mọi thứ trừ cấu hình hệ thống
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS" or path in PUBLIC_PATHS or not (path.startswith("/api/") or path == "/video"):
+        return await call_next(request)
+    user = auth.user_for_token(request.cookies.get("session"))
+    if user is None:
+        return JSONResponse({"detail": "Chưa đăng nhập hoặc phiên đã hết hạn"}, status_code=401)
+    if (request.method, path) in ADMIN_ONLY and user["role"] != "admin":
+        return JSONResponse({"detail": "Chỉ quản trị viên được thực hiện thao tác này"}, status_code=403)
+    request.state.user = user
+    return await call_next(request)
+
+
+@app.post("/api/auth/login")
+def auth_login(body: dict):
+    result = auth.login(str(body.get("username", "")), str(body.get("password", "")))
+    if result is None:
+        time.sleep(0.5)  # làm chậm dò mật khẩu
+        raise HTTPException(status_code=401, detail="Sai tên đăng nhập hoặc mật khẩu")
+    token, user = result
+    response = JSONResponse(user)
+    response.set_cookie("session", token, max_age=auth.SESSION_TTL_S, httponly=True, samesite="lax", path="/")
+    return response
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request):
+    auth.logout(request.cookies.get("session"))
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("session", path="/")
+    return response
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request):
+    return request.state.user
+
+
+@app.post("/api/auth/password")
+def auth_change_password(body: dict, request: Request):
+    new_password = str(body.get("new_password", ""))
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 6 ký tự")
+    ok = auth.change_password(request.state.user["id"], str(body.get("old_password", "")), new_password,
+                              keep_token=request.cookies.get("session"))
+    if not ok:
+        raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không đúng")
+    return {"ok": True}
+
 
 pipeline = DetectionPipeline()
 telemetry = TelemetryHub(get_uav_ids=lambda: [u["id"] for u in db.list_uavs()])
@@ -55,6 +114,7 @@ def _seed_demo_data():
 @app.on_event("startup")
 def startup():
     db.init_db()
+    auth.init()
     if not db.list_uavs():
         _seed_demo_data()
     first = db.list_uavs()[0]
@@ -130,6 +190,9 @@ def snapshot():
 
 @app.websocket("/ws")
 async def ws_detections(websocket: WebSocket):
+    if auth.user_for_token(websocket.cookies.get("session")) is None:
+        await websocket.close(code=4401)  # chưa đăng nhập
+        return
     await websocket.accept()
     try:
         while True:
@@ -410,8 +473,8 @@ def get_target_notes(target_id: int):
 
 
 @app.post("/api/targets/{target_id}/notes")
-def post_target_note(target_id: int, body: dict):
-    db.add_target_note(target_id, "admin", body["text"])
+def post_target_note(target_id: int, body: dict, request: Request):
+    db.add_target_note(target_id, request.state.user["username"], body["text"])
     return {"ok": True}
 
 
@@ -427,18 +490,44 @@ def get_target_snapshots(target_id: int):
 
 @app.get("/api/stats/overview")
 def stats_overview():
+    """Tổng hợp cho trang Tổng quan trong 1 lần gọi: đội UAV, nhiệm vụ, mục tiêu, cảnh báo 24h."""
+    now = time.time()
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 24 * 3600))
+    live = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 120))
     uavs = db.list_uavs()
     missions = list_missions()
-    payload = pipeline.get_payload()
-    recent_logs = db.query_logs()[:5]
+    active_missions = [m for m in missions if m["status"] in ("active", "paused")]
+    mission_by_uav = {m["uav_id"]: m for m in active_missions}
+
+    fleet = []
+    for u in uavs:
+        t = telemetry.position(u["id"]) or {}
+        m = mission_by_uav.get(u["id"])
+        fleet.append({
+            "id": u["id"], "name": u["name"], "type": u["type"], "status": u["status"], "zone": u["zone"],
+            "flying_since": u["flying_since"], "battery_pct": t.get("battery_pct"), "altitude_m": t.get("altitude_m"),
+            "speed_kmh": t.get("speed_kmh"), "signal": t.get("signal"), "lat": t.get("lat"), "lon": t.get("lon"),
+            "mission": {"id": m["id"], "name": m["name"], "progress_pct": m["progress_pct"]} if m else None,
+        })
+
+    counts = db.overview_counts(since, live)
     return {
-        "uav_total": len(uavs),
-        "uav_online": sum(1 for u in uavs if u["status"] != "offline"),
-        "mission_running": sum(1 for m in missions if m["status"] == "active"),
-        "mission_total": len(missions),
-        "targets_tracked": len(payload["objects"]) if payload else 0,
-        "alert_count_24h": len(recent_logs),
-        "recent_alerts": recent_logs,
+        "generated_at": _now_iso(),
+        "ai_enabled": pipeline.model is not None,
+        "fleet": fleet,
+        "missions": {
+            "by_status": dict(Counter(m["status"] for m in missions)),
+            "active": [{k: m.get(k) for k in ("id", "code", "name", "uav_id", "status", "priority", "progress_pct", "expected_end_at")}
+                       for m in active_missions],
+        },
+        "targets": {"live": counts["targets_live"], "by_threat": counts["targets_by_threat"], "by_status": counts["targets_by_status"]},
+        "alerts": {
+            "total": sum(counts["alerts_by_severity"].values()),
+            "by_severity": counts["alerts_by_severity"],
+            "by_class": counts["alerts_by_class"],
+            "by_hour": counts["alerts_by_hour"],
+            "recent": db.query_logs(start=since)[:8],
+        },
     }
 
 
@@ -477,10 +566,10 @@ def get_note(note_id: int):
 
 
 @app.post("/api/notes")
-def create_note(body: dict):
+def create_note(body: dict, request: Request):
     note_id = db.create_note(
         body["title"], body.get("content", ""), body.get("tags", []),
-        body.get("uav_id"), body.get("mission_id"), body.get("author", "admin"),
+        body.get("uav_id"), body.get("mission_id"), request.state.user["username"],
     )
     return {"id": note_id}
 

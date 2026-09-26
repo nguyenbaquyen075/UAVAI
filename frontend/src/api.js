@@ -1,4 +1,47 @@
-export const API_BASE = "http://localhost:8001";
+// Backend đi qua proxy của Vite (vite.config.js) -> đường dẫn tương đối, cookie đăng nhập tự đi kèm
+export const API_BASE = "";
+
+// Phiên hết hạn / bị đăng xuất ở máy khác: mọi request API trả 401 -> báo App hiện lại màn đăng nhập.
+// Bọc fetch 1 chỗ ở đây thay vì sửa từng hàm (nhiều hàm có dữ liệu mẫu dự phòng sẽ che mất lỗi 401).
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const res = await nativeFetch(input, init);
+  const url = typeof input === "string" ? input : input.url;
+  if (res.status === 401 && url.startsWith("/api/") && !url.startsWith("/api/auth/login")) {
+    window.dispatchEvent(new Event("auth:expired"));
+  }
+  return res;
+};
+
+export async function authMe() {
+  const r = await nativeFetch("/api/auth/me");
+  return r.ok ? r.json() : null;
+}
+
+export async function authLogin(username, password) {
+  const r = await nativeFetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Không đăng nhập được");
+  return data;
+}
+
+export async function authLogout() {
+  await nativeFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+}
+
+export async function authChangePassword(oldPassword, newPassword) {
+  const r = await nativeFetch("/api/auth/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Không đổi được mật khẩu");
+}
 
 // --- Mock Fallback Data ---
 const MOCK_SETTINGS = {

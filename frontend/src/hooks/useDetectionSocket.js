@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-const WS_URL = "ws://localhost:8001/ws";
+const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`; // qua proxy Vite, kèm cookie đăng nhập
 
 export function useDetectionSocket() {
   const [connected, setConnected] = useState(false);

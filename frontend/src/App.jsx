@@ -13,7 +13,6 @@ import {
   Wifi,
   Crosshair,
   Battery,
-  User,
   ChevronsLeft,
   ChevronsRight,
   Sun,
@@ -26,6 +25,9 @@ import {
   Grid2x2,
 } from "lucide-react";
 import { useDetectionSocket } from "./hooks/useDetectionSocket";
+import { authLogout, authMe } from "./api";
+import Login from "./pages/Login";
+import AccountMenu from "./components/AccountMenu";
 import Overview from "./pages/Overview";
 import UAVList from "./pages/UAVList";
 import Missions from "./pages/Missions";
@@ -52,11 +54,35 @@ const TABS = [
   { key: "notes", label: "Ghi chép", Icon: FileText },
   { key: "logs", label: "Cảnh báo", Icon: Bell, badge: 3 },
   { key: "reports", label: "Báo cáo", Icon: BarChart2 },
-  { key: "settings", label: "Cài đặt", Icon: Settings },
+  { key: "settings", label: "Cài đặt", Icon: Settings, adminOnly: true },
 ];
 
+// Cổng đăng nhập: chưa đăng nhập -> màn Login; phiên hết hạn (API trả 401) -> quay lại Login
 export default function App() {
-  const [tab, setTab] = useState("uavs");
+  const [user, setUser] = useState(undefined); // undefined = đang kiểm tra phiên, null = chưa đăng nhập
+
+  useEffect(() => {
+    authMe().then(setUser).catch(() => setUser(null));
+    const expired = () => setUser(null);
+    window.addEventListener("auth:expired", expired);
+    return () => window.removeEventListener("auth:expired", expired);
+  }, []);
+
+  if (user === undefined) return <div className="login-page" />;
+  if (!user) return <Login onLogin={setUser} />;
+  return (
+    <Dashboard
+      user={user}
+      onLogout={async () => {
+        await authLogout();
+        setUser(null);
+      }}
+    />
+  );
+}
+
+function Dashboard({ user, onLogout }) {
+  const [tab, setTab] = useState("overview");
   const [collapsed, setCollapsed] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
   const { connected, payload } = useDetectionSocket();
@@ -94,7 +120,7 @@ export default function App() {
         </div>
 
         <nav className="tabs">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !t.adminOnly || user.role === "admin").map((t) => (
             <button
               key={t.key}
               className={`tab-item ${tab === t.key ? "active" : ""}`}
@@ -204,15 +230,7 @@ export default function App() {
               <span>{currentTime || "18:42:10 13/05/2024"}</span>
             </div>
 
-            <div className="user-profile-badge">
-              <div className="avatar-circle">
-                <User size={16} color="#e2e8f0" />
-              </div>
-              <div className="user-details">
-                <span className="username">admin</span>
-                <span className="user-role">Quản trị viên</span>
-              </div>
-            </div>
+            <AccountMenu user={user} onLogout={onLogout} />
           </div>
         </header>
 
@@ -230,7 +248,7 @@ export default function App() {
             {tab === "notes" && <NotesView />}
             {tab === "logs" && <AlertsView onOpenMap={() => setTab("map")} />}
             {tab === "reports" && <ReportsView />}
-            {tab === "settings" && <SettingsPage />}
+            {tab === "settings" && user.role === "admin" && <SettingsPage />}
           </ErrorBoundary>
         </main>
       </div>

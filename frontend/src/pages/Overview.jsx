@@ -1,406 +1,354 @@
-import { useEffect, useState } from "react";
-import {
-  Plane,
-  ClipboardList,
-  Target,
-  AlertTriangle,
-  Camera,
-  ChevronUp,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  Minus,
-  Wifi,
-  ExternalLink,
-} from "lucide-react";
-import { API_BASE, getOverviewStats } from "../api";
-import MiniMap from "../components/MiniMap";
-import TacticalVideoHUD from "../components/TacticalVideoHUD";
+import { useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { Plane, ClipboardList, Crosshair, AlertTriangle, BatteryWarning, Cpu, ChevronRight, Wifi, WifiOff } from "lucide-react";
+import { getOverviewStats } from "../api";
 
-export default function Overview({ payload, onNavigateTab }) {
-  const [stats, setStats] = useState(null);
-  const [selectedUavId, setSelectedUavId] = useState("UAV_02");
-  const [cameraMode, setCameraMode] = useState("EO");
-  const [ptzZoom, setPtzZoom] = useState(5.2);
-  const [isRecording, setIsRecording] = useState(false);
-  const [flashSnapshot, setFlashSnapshot] = useState(false);
+const BASE = [21.0285, 105.8542];
+const UAV_STATUS = {
+  flying: ["Đang bay", "#22c55e"],
+  ready: ["Sẵn sàng", "#38bdf8"],
+  offline: ["Offline", "#64748b"],
+  maintenance: ["Bảo trì", "#a855f7"],
+};
+const MISSION_STATUS = { active: "Đang thực hiện", paused: "Tạm dừng" };
+const PRIORITY = { high: ["Cao", "#f87171"], medium: ["Trung bình", "#fbbf24"], low: ["Thấp", "#94a3b8"] };
+const CLASS_LABEL = { person: "Người", car: "Ô tô", motorcycle: "Xe máy", bus: "Xe buýt", truck: "Xe tải" };
+// Màu trạng thái dành riêng cho mức nguy hiểm — luôn kèm chữ, không dùng màu đơn thuần
+const SEVERITY = { red: ["Nguy hiểm", "#ef4444"], yellow: ["Cảnh báo", "#f59e0b"], green: ["Bình thường", "#22c55e"] };
+const THREAT = { high: ["Cao", "#ef4444"], medium: ["Trung bình", "#f59e0b"], low: ["Thấp", "#22c55e"] };
+const LOW_BATTERY = 30;
+
+const fmtClock = (iso) => new Date(iso).toLocaleTimeString("vi-VN", { hour12: false });
+const sum = (obj) => Object.values(obj || {}).reduce((a, b) => a + b, 0);
+
+function KpiCard({ icon: Icon, tone, title, value, total, sub, onClick }) {
+  return (
+    <button className={`ov-kpi ${tone || ""}`} onClick={onClick}>
+      <span className="ov-kpi-icon">
+        <Icon size={22} />
+      </span>
+      <span className="ov-kpi-body">
+        <span className="ov-kpi-title">{title}</span>
+        <span className="ov-kpi-value">
+          {value}
+          {total != null && <small> / {total}</small>}
+        </span>
+        <span className="ov-kpi-sub">{sub}</span>
+      </span>
+      <ChevronRight size={16} className="ov-kpi-go" />
+    </button>
+  );
+}
+
+function Panel({ title, action, onAction, children, className = "" }) {
+  return (
+    <section className={`dashboard-panel ov-panel ${className}`}>
+      <div className="panel-section-header">
+        <h3 className="section-title">{title}</h3>
+        {action && (
+          <button className="btn-view-all" onClick={onAction}>
+            {action} ›
+          </button>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// Bản đồ vị trí cả đội UAV (toạ độ lấy sẵn từ API tổng quan, không gọi thêm)
+function FleetOverviewMap({ fleet }) {
+  const ref = useRef(null);
+  const mapRef = useRef(null);
+  const layerRef = useRef(null);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const overviewStats = await getOverviewStats();
-        setStats(overviewStats);
-      } catch (err) {
-        console.error("Error loading overview data:", err);
-      }
-    }
-    load();
-    const id = setInterval(load, 3000);
-    return () => clearInterval(id);
+    const map = L.map(ref.current, { zoomControl: false, attributionControl: false }).setView(BASE, 14);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 19,
+      maxNativeZoom: 16,
+    }).addTo(map);
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+    L.circleMarker(BASE, { radius: 6, color: "#ef4444", fillColor: "#ef4444", fillOpacity: 1 }).bindTooltip("Căn cứ").addTo(map);
+    layerRef.current = L.layerGroup().addTo(map);
+    mapRef.current = map;
+    return () => map.remove();
   }, []);
 
-  const handleSnapshot = () => {
-    setFlashSnapshot(true);
-    setTimeout(() => setFlashSnapshot(false), 300);
-    const a = document.createElement("a");
-    a.href = `${API_BASE}/api/snapshot`;
-    a.download = `snapshot_${Date.now()}.jpg`;
-    a.click();
-  };
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    fleet
+      .filter((u) => typeof u.lat === "number")
+      .forEach((u) => {
+        const [label, color] = UAV_STATUS[u.status] || ["-", "#64748b"];
+        L.marker([u.lat, u.lon], {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="ov-uav-pin" style="--c:${color}"><span></span>${u.name}</div>`,
+            iconSize: null,
+            iconAnchor: [8, 8],
+          }),
+        })
+          .bindTooltip(`${u.name} · ${label}${u.battery_pct != null ? ` · Pin ${Math.round(u.battery_pct)}%` : ""}`)
+          .addTo(layer);
+      });
+  }, [fleet]);
 
-  const handlePtzZoomChange = (delta) => {
-    setPtzZoom((prev) => Math.max(1.0, Math.min(10.0, Number((prev + delta).toFixed(1)))));
-  };
+  return <div ref={ref} className="ov-map" />;
+}
+
+// Cảnh báo theo giờ, 24 giờ gần nhất (1 chuỗi -> 1 màu, không cần chú thích; rê chuột xem số)
+function AlertsByHour({ byHour }) {
+  const now = Date.now();
+  const bars = Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(now - (23 - i) * 3600_000);
+    return { key: d.toISOString().slice(0, 13), hour: d.getHours(), count: byHour?.[d.toISOString().slice(0, 13)] || 0 };
+  });
+  const max = Math.max(1, ...bars.map((b) => b.count));
+  return (
+    <div className="ov-hour-chart" role="img" aria-label="Số cảnh báo theo giờ trong 24 giờ qua">
+      <div className="ov-hour-bars">
+        {bars.map((b) => (
+          <div key={b.key} className="ov-hour-col" title={`${b.hour}:00–${b.hour + 1}:00 · ${b.count} cảnh báo`}>
+            <div className="ov-hour-bar" style={{ height: `${(b.count / max) * 100}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="ov-hour-axis">
+        {bars.map((b, i) => (
+          <span key={b.key}>{i % 6 === 0 || i === 23 ? `${b.hour}h` : ""}</span>
+        ))}
+      </div>
+      <span className="ov-chart-max">tối đa {max}/giờ</span>
+    </div>
+  );
+}
+
+function HBar({ label, value, max, color = "var(--ov-series)" }) {
+  return (
+    <div className="ov-hbar" title={`${label}: ${value}`}>
+      <span className="ov-hbar-label">{label}</span>
+      <span className="ov-hbar-track">
+        <span className="ov-hbar-fill" style={{ width: `${max ? (value / max) * 100 : 0}%`, background: color }} />
+      </span>
+      <span className="ov-hbar-val">{value}</span>
+    </div>
+  );
+}
+
+export default function Overview({ onNavigateTab }) {
+  const [s, setS] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => getOverviewStats().then((d) => !cancelled && d?.fleet && setS(d));
+    load();
+    const id = setInterval(load, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (!s) return <div className="ov-page ov-loading">Đang tải số liệu tổng quan…</div>;
+
+  const go = (tab) => () => onNavigateTab?.(tab);
+  const fleet = s.fleet;
+  const byStatus = fleet.reduce((a, u) => ({ ...a, [u.status]: (a[u.status] || 0) + 1 }), {});
+  const lowBattery = fleet.filter((u) => u.status === "flying" && u.battery_pct != null && u.battery_pct < LOW_BATTERY);
+  const uavName = (id) => fleet.find((u) => u.id === id)?.name || `UAV #${id}`;
+  const ms = s.missions.by_status;
+  const sev = s.alerts.by_severity;
+  const classes = Object.entries(s.alerts.by_class).sort((a, b) => b[1] - a[1]);
+  const classMax = Math.max(0, ...classes.map(([, n]) => n));
+  const threatTotal = sum(s.targets.by_threat);
 
   return (
-    <div className={`overview-dashboard ${flashSnapshot ? "screen-flash" : ""}`}>
-      {/* ROW 1: TOP 4 KPI METRIC SUMMARY CARDS */}
-      <div className="overview-kpi-row">
-        {/* CARD 1: UAV HOẠT ĐỘNG */}
-        <div className="kpi-summary-card">
-          <div className="kpi-icon-box">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f8fafc" strokeWidth="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
-            </svg>
-          </div>
-          <div className="kpi-content-group">
-            <span className="kpi-title">UAV HOẠT ĐỘNG</span>
-            <div className="kpi-main-value">
-              <span className="big-num">{stats?.uav_online ?? 4}</span>
-              <span className="total-denom">/ {stats?.uav_total ?? 6}</span>
-            </div>
-            <div className="kpi-sub-detail">
-              <span className="sub-item"><span className="dot green-dot" /> 4 online</span>
-              <span className="sub-item"><span className="dot gray-dot" /> 2 offline</span>
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 2: NHIỆM VỤ ĐANG CHẠY */}
-        <div className="kpi-summary-card">
-          <div className="kpi-icon-box">
-            <ClipboardList size={26} color="#f8fafc" />
-          </div>
-          <div className="kpi-content-group">
-            <span className="kpi-title">NHIỆM VỤ ĐANG CHẠY</span>
-            <div className="kpi-main-value">
-              <span className="big-num">{stats?.mission_running ?? 2}</span>
-              <span className="total-denom">/ {stats?.mission_total ?? 5}</span>
-            </div>
-            <div className="kpi-sub-detail">
-              <span className="sub-item"><span className="dot green-dot" /> 2 hoàn thành</span>
-              <span className="sub-item"><span className="dot orange-dot" /> 3 chờ</span>
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 3: MỤC TIÊU ĐANG THEO DÕI */}
-        <div className="kpi-summary-card">
-          <div className="kpi-icon-box">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f8fafc" strokeWidth="2">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-          </div>
-          <div className="kpi-content-group">
-            <span className="kpi-title">MỤC TIÊU ĐANG THEO DÕI</span>
-            <div className="kpi-main-value">
-              <span className="big-num">{stats?.targets_tracked ?? 3}</span>
-              <span className="total-denom">/ {stats?.targets_total ?? 8}</span>
-            </div>
-            <div className="kpi-sub-detail">
-              <span className="sub-item"><span className="dot green-dot" /> 3 đang theo dõi</span>
-              <span className="sub-item"><span className="dot orange-dot" /> 5 đã khóa</span>
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 4: CẢNH BÁO */}
-        <div className="kpi-summary-card">
-          <div className="kpi-icon-box yellow-bg">
-            <AlertTriangle size={24} color="#facc15" fill="#facc15" fillOpacity="0.2" />
-          </div>
-          <div className="kpi-content-group">
-            <span className="kpi-title">CẢNH BÁO</span>
-            <div className="kpi-main-value">
-              <span className="big-num">{stats?.alert_count_24h ?? 3}</span>
-            </div>
-            <div className="kpi-sub-detail">
-              <span className="sub-item"><span className="dot red-dot" /> 2 mức cao</span>
-              <span className="sub-item"><span className="dot yellow-dot" /> 1 mức trung bình</span>
-            </div>
-          </div>
-        </div>
+    <div className="ov-page">
+      <div className="ov-status-line">
+        <span className={`ov-chip ${s.ai_enabled ? "on" : ""}`}>
+          <Cpu size={13} /> Nhận diện AI: {s.ai_enabled ? "Đang bật" : "Đang tắt"}
+        </span>
+        <span className="ov-updated">Cập nhật {fmtClock(s.generated_at)} · tự làm mới mỗi 5 giây</span>
       </div>
 
-      {/* ROW 2: MAIN DYNAMIC CONTENT GRID */}
-      <div className="overview-main-grid">
-        {/* LEFT COLUMN: LIVE FEED + MISSION & MAP CARD */}
-        <div className="overview-left-col">
-          {/* CAMERA FEED & HUD */}
-          <div className="video-hud-panel">
-            <TacticalVideoHUD
-              isLive={true}
-              telemetry={payload?.uav_status?.gps}
-              objects={payload?.objects ?? []}
-              frameSize={{ width: payload?.uav_status?.frame_width, height: payload?.uav_status?.frame_height }}
-              cameraMode={cameraMode}
-              zoomLevel={ptzZoom}
-              onZoomChange={setPtzZoom}
-            />
-          </div>
-
-          {/* CURRENT MISSION & MINI MAP SPLIT CARD */}
-          <div className="mission-map-split-card">
-            <div className="card-section-title">NHIỆM VỤ HIỆN TẠI</div>
-
-            <div className="split-card-content">
-              {/* LEFT HALF: MISSION DETAILS */}
-              <div className="mission-info-half">
-                <div className="mission-name-header">
-                  <span className="mission-title-text">TUẦN TRA KHU VỰC A</span>
-                  <span className="status-badge-running">ĐANG THỰC HIỆN</span>
-                </div>
-
-                <div className="mission-details-grid">
-                  <div className="detail-row">
-                    <span className="label">UAV</span>
-                    <span className="val bold-val">{selectedUavId}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="label">Thời gian bắt đầu</span>
-                    <span className="val">18:20 13/05/2024</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="label">Thời gian dự kiến</span>
-                    <span className="val">19:20 13/05/2024</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="label">Waypoints</span>
-                    <span className="val bold-val">12 / 15</span>
-                  </div>
-                </div>
-
-                <div className="mission-progress-container">
-                  <div className="progress-track">
-                    <div className="progress-fill-bar" style={{ width: "65%" }} />
-                  </div>
-                  <span className="progress-pct-text">65%</span>
-                </div>
-              </div>
-
-              {/* RIGHT HALF: TACTICAL MINI MAP */}
-              <div className="map-info-half">
-                <MiniMap uavPosition={payload?.uav_status?.gps} />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: UAV TELEMETRY & CAMERA CONTROLS */}
-        <div className="overview-right-col">
-          {/* PANEL 1: TRẠNG THÁI UAV */}
-          <div className="uav-status-card">
-            <div className="uav-card-top-bar">
-              <span className="panel-title">TRẠNG THÁI UAV</span>
-              <div className="uav-select-pill">
-                <select
-                  value={selectedUavId}
-                  onChange={(e) => setSelectedUavId(e.target.value)}
-                >
-                  <option value="UAV_01">UAV_01</option>
-                  <option value="UAV_02">UAV_02</option>
-                  <option value="UAV_03">UAV_03</option>
-                  <option value="UAV_04">UAV_04</option>
-                </select>
-                <ChevronDown size={14} className="select-arrow" />
-              </div>
-            </div>
-
-            {/* DRONE PHOTOREALISTIC PREVIEW */}
-            <div className="drone-preview-box">
-              <img
-                src="/uav_drone.png"
-                alt="UAV Drone Model"
-                className="drone-render-img"
-              />
-            </div>
-
-            {/* TELEMETRY PARAMETER TABLE */}
-            <div className="telemetry-param-list">
-              <div className="param-row">
-                <span className="p-label">Trạng thái</span>
-                <span className="p-val green-text bold-text">ĐANG BAY</span>
-              </div>
-
-              <div className="param-row battery-row">
-                <span className="p-label">Pin</span>
-                <div className="p-val battery-val-group">
-                  <div className="battery-meter-bar">
-                    <div className="battery-fill-green" style={{ width: "78%" }} />
-                  </div>
-                  <span className="pct-num green-text">78%</span>
-                </div>
-              </div>
-
-              <div className="param-row">
-                <span className="p-label">Thời gian bay</span>
-                <span className="p-val">28:45</span>
-              </div>
-
-              <div className="param-row">
-                <span className="p-label">Khoảng cách</span>
-                <span className="p-val">5.2 km</span>
-              </div>
-
-              <div className="param-row">
-                <span className="p-label">Độ cao</span>
-                <span className="p-val">120 m</span>
-              </div>
-
-              <div className="param-row">
-                <span className="p-label">Tốc độ</span>
-                <span className="p-val">45.2 km/h</span>
-              </div>
-
-              <div className="param-row">
-                <span className="p-label">GPS</span>
-                <span className="p-val">12</span>
-              </div>
-
-              <div className="param-row">
-                <span className="p-label">Tín hiệu</span>
-                <span className="p-val green-text signal-val">
-                  <Wifi size={13} /> Strong
-                </span>
-              </div>
-            </div>
-
-            <button
-              className="uav-detail-btn"
-              onClick={() => onNavigateTab && onNavigateTab("uavs")}
-            >
-              Xem chi tiết
-            </button>
-          </div>
-
-          {/* PANEL 2: ĐIỀU KHIỂN CAMERA (EXACT USER IMAGE REFERENCE) */}
-          <div className="camera-control-card">
-            <div className="panel-title">ĐIỀU KHIỂN CAMERA</div>
-
-            {/* EO / IR MODE TOGGLES */}
-            <div className="camera-mode-pills">
-              <button
-                className={`mode-pill ${cameraMode === "EO" ? "active" : ""}`}
-                onClick={() => setCameraMode("EO")}
-              >
-                EO
-              </button>
-              <button
-                className={`mode-pill ${cameraMode === "IR" ? "active" : ""}`}
-                onClick={() => setCameraMode("IR")}
-              >
-                IR
-              </button>
-            </div>
-
-            {/* D-PAD & VERTICAL ZOOM CONTROLLER */}
-            <div className="ptz-controller-wrapper">
-              {/* CIRCULAR D-PAD DISC */}
-              <div className="ptz-dpad-disc-exact">
-                <button className="dpad-btn-pad up" title="Tilt Up">
-                  <ChevronUp size={20} strokeWidth={2.5} />
-                </button>
-                <div className="dpad-mid-row">
-                  <button className="dpad-btn-pad left" title="Pan Left">
-                    <ChevronLeft size={20} strokeWidth={2.5} />
-                  </button>
-                  <button className="dpad-center-circle" title="Center Lens">
-                    <div className="center-dot-inner" />
-                  </button>
-                  <button className="dpad-btn-pad right" title="Pan Right">
-                    <ChevronRight size={20} strokeWidth={2.5} />
-                  </button>
-                </div>
-                <button className="dpad-btn-pad down" title="Tilt Down">
-                  <ChevronDown size={20} strokeWidth={2.5} />
-                </button>
-              </div>
-
-              {/* VERTICAL ZOOM CAPSULE SLIDER */}
-              <div className="vertical-zoom-capsule-panel-ptz">
-                <button className="capsule-zoom-btn" onClick={() => handlePtzZoomChange(0.5)}>
-                  <Plus size={16} />
-                </button>
-                
-                <div className="capsule-ruler-scale">
-                  <div className="ruler-line" />
-                  <div className="ruler-line short" />
-                  <div className="ruler-line" />
-                </div>
-
-                <span className="capsule-zoom-val">{ptzZoom.toFixed(1)}X</span>
-
-                <div className="capsule-ruler-scale">
-                  <div className="ruler-line" />
-                  <div className="ruler-line short" />
-                  <div className="ruler-line" />
-                </div>
-
-                <button className="capsule-zoom-btn" onClick={() => handlePtzZoomChange(-0.5)}>
-                  <Minus size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* ACTION BUTTONS */}
-            <div className="camera-action-buttons">
-              <button className="cam-act-btn photo-btn" onClick={handleSnapshot}>
-                <Camera size={18} /> Chụp ảnh
-              </button>
-              <button
-                className={`cam-act-btn video-btn ${isRecording ? "recording" : ""}`}
-                onClick={() => setIsRecording(!isRecording)}
-              >
-                <span className={`red-rec-circle-solid ${isRecording ? "pulsate" : ""}`} />
-                {isRecording ? "Đang quay..." : "Quay video"}
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="ov-kpis">
+        <KpiCard
+          icon={Plane}
+          title="UAV ĐANG BAY"
+          value={byStatus.flying || 0}
+          total={fleet.length}
+          sub={`${byStatus.ready || 0} sẵn sàng · ${byStatus.maintenance || 0} bảo trì · ${byStatus.offline || 0} offline`}
+          onClick={go("uavs")}
+        />
+        <KpiCard
+          icon={ClipboardList}
+          title="NHIỆM VỤ ĐANG CHẠY"
+          value={ms.active || 0}
+          total={sum(ms)}
+          sub={`${ms.paused || 0} tạm dừng · ${ms.completed || 0} hoàn thành`}
+          onClick={go("missions")}
+        />
+        <KpiCard
+          icon={Crosshair}
+          title="MỤC TIÊU ĐANG THEO DÕI"
+          value={s.targets.live}
+          sub={`${threatTotal} trong 24h · ${s.targets.by_threat.high || 0} nguy hiểm cao`}
+          tone={s.targets.by_threat.high ? "warn" : ""}
+          onClick={go("tracking")}
+        />
+        <KpiCard
+          icon={AlertTriangle}
+          title="CẢNH BÁO 24H"
+          value={s.alerts.total}
+          sub={`${sev.red || 0} nguy hiểm · ${sev.yellow || 0} cảnh báo`}
+          tone={sev.red ? "danger" : s.alerts.total ? "warn" : ""}
+          onClick={go("logs")}
+        />
+        <KpiCard
+          icon={BatteryWarning}
+          title={`PIN DƯỚI ${LOW_BATTERY}%`}
+          value={lowBattery.length}
+          sub={lowBattery.length ? lowBattery.map((u) => u.name).join(", ") : "Mọi UAV đang bay đủ pin"}
+          tone={lowBattery.length ? "danger" : ""}
+          onClick={go("uavs")}
+        />
       </div>
 
-      {/* ROW 3: BOTTOM TICKER / ALERT BAR */}
-      <div className="overview-alert-ticker">
-        <div className="ticker-label">CẢNH BÁO GẦN NHẤT</div>
-
-        <div className="ticker-items-container">
-          <div className="ticker-item danger">
-            <span className="dot red-dot" />
-            <span className="timestamp">18:35:21</span>
-            <span className="alert-text">UAV_04: Mất tín hiệu GPS tạm thời</span>
+      <div className="ov-row ov-row-main">
+        <Panel title="VỊ TRÍ ĐỘI UAV" action="Bản đồ" onAction={go("map")} className="ov-map-panel">
+          <FleetOverviewMap fleet={fleet} />
+          <div className="ov-legend">
+            {Object.entries(UAV_STATUS).map(([k, [label, color]]) => (
+              <span key={k}>
+                <i style={{ background: color }} /> {label} ({byStatus[k] || 0})
+              </span>
+            ))}
+            <span>
+              <i style={{ background: "#ef4444" }} /> Căn cứ
+            </span>
           </div>
+        </Panel>
 
-          <div className="ticker-item warning">
-            <span className="dot orange-dot" />
-            <span className="timestamp">18:32:10</span>
-            <span className="alert-text">Pin UAV_03 yếu: 20%</span>
+        <Panel title="TRẠNG THÁI ĐỘI UAV" action="Quản lý UAV" onAction={go("uavs")}>
+          <div className="ov-fleet">
+            {fleet.map((u) => {
+              const [label, color] = UAV_STATUS[u.status] || ["-", "#64748b"];
+              const bat = u.battery_pct != null ? Math.round(u.battery_pct) : null;
+              const batColor = bat == null ? "#334155" : bat < LOW_BATTERY ? "#ef4444" : bat < 50 ? "#f59e0b" : "#22c55e";
+              return (
+                <div key={u.id} className="ov-fleet-row">
+                  <div className="ov-fleet-name">
+                    <strong>{u.name}</strong>
+                    <span>{u.mission ? u.mission.name : u.zone || u.type || "—"}</span>
+                  </div>
+                  <span className="ov-pill" style={{ color, borderColor: color }}>
+                    {label}
+                  </span>
+                  <div className="ov-battery" title={bat != null ? `Pin ${bat}%` : "Không có dữ liệu pin"}>
+                    <span className="ov-battery-track">
+                      <span style={{ width: `${bat ?? 0}%`, background: batColor }} />
+                    </span>
+                    <span className="ov-battery-val">{bat != null ? `${bat}%` : "—"}</span>
+                  </div>
+                  <span className="ov-signal" title={`Tín hiệu: ${u.signal || "—"}`}>
+                    {u.status === "offline" ? <WifiOff size={14} /> : <Wifi size={14} className={u.signal === "Weak" ? "weak" : ""} />}
+                  </span>
+                </div>
+              );
+            })}
           </div>
+        </Panel>
+      </div>
 
-          <div className="ticker-item danger">
-            <span className="dot red-dot" />
-            <span className="timestamp">18:20:05</span>
-            <span className="alert-text">Mục tiêu rời khỏi vùng theo dõi</span>
+      <div className="ov-row ov-row-3">
+        <Panel title="NHIỆM VỤ ĐANG THỰC HIỆN" action="Tất cả" onAction={go("missions")}>
+          {s.missions.active.length === 0 ? (
+            <p className="ov-empty">Không có nhiệm vụ nào đang chạy</p>
+          ) : (
+            <div className="ov-missions">
+              {s.missions.active.map((m) => {
+                const [pLabel, pColor] = PRIORITY[m.priority] || ["-", "#94a3b8"];
+                return (
+                  <div key={m.id} className="ov-mission">
+                    <div className="ov-mission-head">
+                      <strong>{m.name}</strong>
+                      <span style={{ color: pColor }}>{pLabel}</span>
+                    </div>
+                    <div className="ov-mission-meta">
+                      {uavName(m.uav_id)} · {MISSION_STATUS[m.status] || m.status}
+                    </div>
+                    <div className="ov-progress">
+                      <span className="ov-progress-track">
+                        <span style={{ width: `${m.progress_pct ?? 0}%` }} />
+                      </span>
+                      <span>{Math.round(m.progress_pct ?? 0)}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="CẢNH BÁO GẦN NHẤT" action="Tất cả" onAction={go("logs")}>
+          {s.alerts.recent.length === 0 ? (
+            <p className="ov-empty">Không có cảnh báo trong 24 giờ qua</p>
+          ) : (
+            <div className="ov-alerts">
+              {s.alerts.recent.map((a) => {
+                const [label, color] = SEVERITY[a.severity] || ["-", "#64748b"];
+                return (
+                  <div key={a.id} className="ov-alert">
+                    <span className="ov-alert-time">{fmtClock(a.timestamp)}</span>
+                    <span className="ov-alert-text">
+                      {CLASS_LABEL[a.class] || a.class} cách {a.distance_m ?? "?"}m · {uavName(a.uav_id)}
+                    </span>
+                    <span className="ov-pill" style={{ color, borderColor: color }}>
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="THỐNG KÊ 24 GIỜ" action="Phân tích" onAction={go("analytics")}>
+          <div className="ov-stats">
+            <div className="ov-stat-block">
+              <span className="ov-stat-title">Cảnh báo theo giờ</span>
+              <AlertsByHour byHour={s.alerts.by_hour} />
+            </div>
+            <div className="ov-stat-block">
+              <span className="ov-stat-title">Cảnh báo theo loại mục tiêu</span>
+              {classes.length === 0 ? (
+                <p className="ov-empty">Chưa có</p>
+              ) : (
+                classes.map(([cls, n]) => <HBar key={cls} label={CLASS_LABEL[cls] || cls} value={n} max={classMax} />)
+              )}
+            </div>
+            <div className="ov-stat-block">
+              <span className="ov-stat-title">Mục tiêu theo mức nguy hiểm</span>
+              <div className="ov-stack" role="img" aria-label="Tỉ lệ mục tiêu theo mức nguy hiểm">
+                {Object.entries(THREAT).map(([k, [label, color]]) => {
+                  const n = s.targets.by_threat[k] || 0;
+                  return n ? <span key={k} style={{ flexGrow: n, background: color }} title={`${label}: ${n}`} /> : null;
+                })}
+              </div>
+              <div className="ov-legend compact">
+                {Object.entries(THREAT).map(([k, [label, color]]) => (
+                  <span key={k}>
+                    <i style={{ background: color }} /> {label} {s.targets.by_threat[k] || 0}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
-
-        <button
-          className="view-all-alerts-link"
-          onClick={() => onNavigateTab && onNavigateTab("logs")}
-        >
-          Xem tất cả <ExternalLink size={13} />
-        </button>
+        </Panel>
       </div>
     </div>
   );

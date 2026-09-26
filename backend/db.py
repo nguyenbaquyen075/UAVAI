@@ -529,3 +529,20 @@ def delete_note(note_id):
     conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
     conn.commit()
     conn.close()
+
+
+def overview_counts(since_iso, live_iso):
+    """Số liệu cho trang Tổng quan, đếm bằng SQL (bảng cảnh báo/mục tiêu có hàng nghìn dòng)."""
+    conn = sqlite3.connect(DB_PATH)
+    q = lambda sql, *p: conn.execute(sql, p).fetchall()
+    out = {
+        "alerts_by_severity": dict(q("SELECT severity, COUNT(*) FROM alert_events WHERE timestamp >= ? GROUP BY severity", since_iso)),
+        "alerts_by_class": dict(q("SELECT class, COUNT(*) FROM alert_events WHERE timestamp >= ? GROUP BY class", since_iso)),
+        # theo giờ "YYYY-MM-DDTHH" (UTC)
+        "alerts_by_hour": dict(q("SELECT substr(timestamp, 1, 13), COUNT(*) FROM alert_events WHERE timestamp >= ? GROUP BY 1", since_iso)),
+        "targets_by_threat": dict(q("SELECT threat_level, COUNT(*) FROM targets WHERE last_seen >= ? GROUP BY threat_level", since_iso)),
+        "targets_by_status": dict(q("SELECT status, COUNT(*) FROM targets WHERE last_seen >= ? GROUP BY status", since_iso)),
+        "targets_live": q("SELECT COUNT(*) FROM targets WHERE last_seen >= ?", live_iso)[0][0],
+    }
+    conn.close()
+    return out
