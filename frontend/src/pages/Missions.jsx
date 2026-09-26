@@ -11,11 +11,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Crosshair,
   Wifi,
-  Battery,
-  User,
-  Camera,
   Pause,
   Play,
   X,
@@ -26,17 +22,13 @@ import {
   Search,
   Filter,
   Maximize2,
-  Video,
   ChevronRight,
   ChevronLeft,
-  Calendar,
   Layers,
-  Target,
-  ArrowUpRight,
-  Sparkles,
-  SlidersHorizontal,
-  Minus,
   Ruler,
+  RefreshCw,
+  Download,
+  Radio,
 } from "lucide-react";
 import {
   activateUAV,
@@ -45,6 +37,7 @@ import {
   getMissionTimeline,
   getUavTelemetry,
   listMissions,
+  listTargets,
   listUAVs,
   patchMission,
 } from "../api";
@@ -73,12 +66,30 @@ const STATUS_CLASS = {
 const PRIORITY_LABEL = { high: "Cao", medium: "Trung bình", low: "Thấp" };
 const PRIORITY_CLASS = { high: "priority-high", medium: "priority-medium", low: "priority-low" };
 
-const EVENT_ICON = { created: Flag, start: PlaneTakeoff, waypoint: MapPin, alert: AlertTriangle };
+const UAV_STATUS_LABEL = { flying: "ĐANG BAY", ready: "SẴN SÀNG", offline: "OFFLINE", maintenance: "BẢO TRÌ" };
+
+const EVENT_COLOR = { created: "blue", start: "green", waypoint: "green", alert: "red" };
+
+const BASE_LAYERS = {
+  satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  street: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+};
+
+// Mẫu nhiệm vụ: chọn 1 mẫu sẽ điền sẵn form tạo nhiệm vụ, người dùng chỉ cần vẽ waypoint
+const TEMPLATES = [
+  { name: "Tuần tra biên giới", description: "Tuần tra dọc tuyến biên giới, phát hiện người/phương tiện xâm nhập", priority: "high", durationMin: 90 },
+  { name: "Giám sát giao thông", description: "Theo dõi mật độ phương tiện tại các nút giao trọng điểm", priority: "medium", durationMin: 60 },
+  { name: "Kiểm tra hạ tầng", description: "Bay kiểm tra trạm điện, đường dây, cầu cống theo lộ trình", priority: "low", durationMin: 45 },
+  { name: "Tìm kiếm cứu nạn", description: "Quét khu vực rộng để tìm người mất tích", priority: "high", durationMin: 120 },
+];
 
 function toLocalInput(date) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+
+// Backend lưu giờ dạng UTC "YYYY-MM-DDTHH:MM:SSZ"
+const toUtcIso = (date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
 
 function fmtTime(iso) {
   if (!iso) return "-";
@@ -91,19 +102,48 @@ function fmtTime(iso) {
   });
 }
 
-function timeRemaining(expectedEndIso) {
-  if (!expectedEndIso) return "00:00:00";
-  const ms = new Date(expectedEndIso).getTime() - Date.now();
-  if (ms <= 0) return "00:00:00";
+const fmtClock = (iso) => (iso ? new Date(iso).toLocaleTimeString("vi-VN", { hour12: false }) : "-");
+
+function fmtDuration(ms) {
+  if (!ms || ms <= 0) return "00:00:00";
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   const s = Math.floor((ms % 60_000) / 1000);
   return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
-export default function Missions({ payload }) {
+const timeRemaining = (expectedEndIso) => fmtDuration(expectedEndIso ? new Date(expectedEndIso).getTime() - Date.now() : 0);
+
+// Thời gian đã bay của 1 nhiệm vụ: từ lúc bắt đầu tới min(bây giờ, kết thúc dự kiến)
+function flownMs(m) {
+  if (!m.started_at || m.status === "cancelled") return 0;
+  const start = new Date(m.started_at).getTime();
+  const end = Math.min(Date.now(), new Date(m.expected_end_at || m.started_at).getTime());
+  return Math.max(0, end - start);
+}
+
+function csvDownload(filename, rows) {
+  const csv = rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const emptyForm = (uavId = "") => ({
+  name: "",
+  uav_id: uavId,
+  priority: "medium",
+  description: "",
+  expected_end: toLocalInput(new Date(Date.now() + 3600_000)),
+});
+
+export default function Missions({ payload, onNavigateTab }) {
   const [missions, setMissions] = useState([]);
   const [uavs, setUavs] = useState([]);
+  const [targets, setTargets] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [telemetry, setTelemetry] = useState(null);
@@ -116,52 +156,83 @@ export default function Missions({ payload }) {
   const [priorityFilter, setPriorityFilter] = useState("");
 
   const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState(null); // null = tạo mới, id = đang sửa
   const [newWaypoints, setNewWaypoints] = useState([]);
-  const [form, setForm] = useState({
-    name: "",
-    uav_id: "",
-    priority: "medium",
-    description: "",
-    expected_end: toLocalInput(new Date(Date.now() + 3600_000)),
-  });
+  const [form, setForm] = useState(emptyForm());
+
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const [rowMenuId, setRowMenuId] = useState(null);
+  const [baseLayer, setBaseLayer] = useState("satellite");
+  const [mapTool, setMapTool] = useState(null); // null | "pin" | "measure"
+  const [measurePts, setMeasurePts] = useState([]);
+  const [pins, setPins] = useState([]);
 
   const containerRef = useRef(null);
+  const mapPanelRef = useRef(null);
+  const timelineRef = useRef(null);
   const mapRef = useRef(null);
+  const tileRef = useRef(null);
   const layerRef = useRef(null);
+  const toolLayerRef = useRef(null);
   const markerRef = useRef(null);
 
   async function refresh() {
-    const missionList = await listMissions();
+    const [missionList, uavList] = await Promise.all([listMissions(), listUAVs()]);
     const safeMissions = Array.isArray(missionList) ? missionList : [];
-    setMissions(safeMissions);
-
-    const uavList = await listUAVs();
     const safeUavs = Array.isArray(uavList) ? uavList : [];
+    setMissions(safeMissions);
     setUavs(safeUavs);
-
-    if (!form.uav_id && safeUavs.length) setForm((f) => ({ ...f, uav_id: safeUavs[0].id }));
-    if (selectedId == null && safeMissions.length) setSelectedId(safeMissions[0].id);
+    setForm((f) => (f.uav_id || !safeUavs.length ? f : { ...f, uav_id: safeUavs[0].id }));
+    setSelectedId((id) => (id == null && safeMissions.length ? safeMissions[0].id : id));
   }
 
   useEffect(() => {
     refresh();
     const id = setInterval(refresh, 4000);
     return () => clearInterval(id);
-  }, [selectedId]);
+  }, []);
 
+  // Đóng menu thả xuống khi click ra ngoài
   useEffect(() => {
-    if (selectedId == null || creating) return;
-    let cancelled = false;
-    getMissionTimeline(selectedId).then((t) => !cancelled && setTimeline(Array.isArray(t) ? t : []));
-    return () => {
-      cancelled = true;
+    const close = () => {
+      setHeaderMenuOpen(false);
+      setRowMenuId(null);
     };
-  }, [selectedId, missions, creating]);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, []);
 
   const safeMissions = Array.isArray(missions) ? missions : [];
   const safeUavs = Array.isArray(uavs) ? uavs : [];
-
   const selected = safeMissions.find((m) => m.id === selectedId) || safeMissions[0];
+
+  useEffect(() => {
+    if (!selected || creating) return;
+    let cancelled = false;
+    getMissionTimeline(selected.id).then((t) => !cancelled && setTimeline(Array.isArray(t) ? t : []));
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, selected?.status, selected?.waypoints_reached, creating]);
+
+  // Mục tiêu do UAV của nhiệm vụ phát hiện trong khung thời gian nhiệm vụ (API trả nhiều -> chỉ tải khi đổi nhiệm vụ)
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    listTargets().then((list) => {
+      if (cancelled || !Array.isArray(list)) return;
+      const from = selected.started_at || "";
+      const to = selected.expected_end_at || "9999";
+      setTargets(
+        list
+          .filter((t) => t.uav_id === selected.uav_id && typeof t.lat === "number" && t.last_seen >= from && t.first_seen <= to)
+          .slice(0, 50)
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id]);
 
   useEffect(() => {
     if (!selected) return;
@@ -178,192 +249,237 @@ export default function Missions({ payload }) {
     };
   }, [selected?.uav_id]);
 
-  // Leaflet Map init & waypoint drawing
-  const creatingRef = useRef(creating);
-  useEffect(() => {
-    creatingRef.current = creating;
-  }, [creating]);
+  // Leaflet: handler click đọc state mới nhất qua ref
+  const stateRef = useRef({});
+  stateRef.current = { creating, mapTool };
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    if (container._leaflet_id) {
-      container._leaflet_id = null;
-    }
+    const map = L.map(container, { zoomControl: false }).setView(START, 14);
+    tileRef.current = L.tileLayer(BASE_LAYERS.satellite, { attribution: "© Esri", maxZoom: 18 }).addTo(map);
+    layerRef.current = L.layerGroup().addTo(map);
+    toolLayerRef.current = L.layerGroup().addTo(map);
 
-    if (mapRef.current) {
-      try {
-        mapRef.current.remove();
-      } catch (e) {}
-      mapRef.current = null;
-    }
+    markerRef.current = L.marker(START, {
+      icon: L.divIcon({
+        className: "drone-map-marker",
+        html: `
+          <div class="uav-marker-pulse">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5">
+              <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"></path>
+            </svg>
+          </div>
+        `,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+      }),
+    }).addTo(map);
 
-    try {
-      const map = L.map(container, { zoomControl: false }).setView(START, 14);
-      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-        attribution: "Esri, Maxar, Earthstar Geographics",
-        maxZoom: 18,
-      }).addTo(map);
+    map.on("click", (e) => {
+      const { creating, mapTool } = stateRef.current;
+      const pt = { lat: e.latlng.lat, lon: e.latlng.lng };
+      if (creating) setNewWaypoints((prev) => [...prev, pt]);
+      else if (mapTool === "pin") setPins((prev) => [...prev, pt]);
+      else if (mapTool === "measure") setMeasurePts((prev) => [...prev, pt]);
+    });
 
-      layerRef.current = L.layerGroup().addTo(map);
+    const onFs = () => setTimeout(() => map.invalidateSize(), 100);
+    document.addEventListener("fullscreenchange", onFs);
 
-      markerRef.current = L.marker(START, {
-        icon: L.divIcon({
-          className: "drone-map-marker",
-          html: `
-            <div class="uav-marker-pulse">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5">
-                <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"></path>
-              </svg>
-            </div>
-          `,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15],
-        }),
-      }).addTo(map);
-
-      map.on("click", (e) => {
-        if (creatingRef.current) {
-          setNewWaypoints((prev) => [...prev, { lat: e.latlng.lat, lon: e.latlng.lng }]);
-        }
-      });
-
-      mapRef.current = map;
-      setTimeout(() => {
-        try {
-          map.invalidateSize();
-        } catch (e) {}
-      }, 200);
-    } catch (err) {
-      console.error("Leaflet map init error:", err);
-    }
+    mapRef.current = map;
+    setTimeout(() => map.invalidateSize(), 200);
 
     return () => {
-      if (mapRef.current) {
-        try {
-          mapRef.current.remove();
-        } catch (e) {}
-        mapRef.current = null;
-      }
+      document.removeEventListener("fullscreenchange", onFs);
+      map.remove();
+      mapRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (!layerRef.current) return;
-    try {
-      layerRef.current.clearLayers();
-      const waypoints = creating ? newWaypoints : selected?.waypoints ?? [];
+    tileRef.current?.setUrl(BASE_LAYERS[baseLayer]);
+  }, [baseLayer]);
 
-      if (Array.isArray(waypoints) && waypoints.length > 0) {
-        waypoints.forEach((wp, i) => {
-          if (typeof wp?.lat !== "number" || typeof wp?.lon !== "number") return;
-          const label = i === 0 || i === waypoints.length - 1 ? "S" : i + 1;
-          L.marker([wp.lat, wp.lon], {
-            icon: L.divIcon({
-              className: "custom-waypoint-marker",
-              html: `<div class="wp-circle">${label}</div>`,
-              iconSize: [22, 22],
-              iconAnchor: [11, 11],
-            }),
-          }).addTo(layerRef.current);
-        });
+  // Waypoint + khu vực nhiệm vụ + mục tiêu
+  const selectedKey = selected ? `${selected.id}:${JSON.stringify(selected.waypoints)}` : "";
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    const waypoints = (creating ? newWaypoints : selected?.waypoints ?? []).filter(
+      (w) => typeof w?.lat === "number" && typeof w?.lon === "number"
+    );
+    const coords = waypoints.map((w) => [w.lat, w.lon]);
 
-        if (waypoints.length > 1) {
-          const polyCoords = waypoints
-            .filter((w) => typeof w?.lat === "number" && typeof w?.lon === "number")
-            .map((w) => [w.lat, w.lon]);
+    waypoints.forEach((wp, i) => {
+      L.marker([wp.lat, wp.lon], {
+        icon: L.divIcon({
+          className: "custom-waypoint-marker",
+          html: `<div class="wp-circle">${i === 0 ? "S" : i + 1}</div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        }),
+      }).addTo(layer);
+    });
 
-          if (polyCoords.length > 1) {
-            L.polyline(polyCoords, { color: "#22c55e", weight: 2 }).addTo(layerRef.current);
-            L.polygon(polyCoords, { color: "#22c55e", weight: 1, fillColor: "#22c55e", fillOpacity: 0.1 }).addTo(
-              layerRef.current
-            );
-          }
-
-          // Dashed path to UAV position
-          if (waypoints[0] && typeof waypoints[0].lat === "number") {
-            L.polyline([[waypoints[0].lat, waypoints[0].lon], START], {
-              color: "#38bdf8",
-              weight: 2,
-              dashArray: "4, 6",
-            }).addTo(layerRef.current);
-          }
-        }
-
-        // Add target icons for selected mission matching reference
-        const sampleTargets = [
-          { lat: 21.031, lon: 105.855 },
-          { lat: 21.028, lon: 105.850 },
-          { lat: 21.026, lon: 105.853 },
-        ];
-        sampleTargets.forEach((t) => {
-          L.marker([t.lat, t.lon], {
-            icon: L.divIcon({
-              className: "custom-target-marker",
-              html: `<div class="target-square"><span class="warn-excl">⚠️</span></div>`,
-              iconSize: [20, 20],
-              iconAnchor: [10, 10],
-            }),
-          }).addTo(layerRef.current);
-        });
-
-        if (mapRef.current) {
-          const boundsCoords = waypoints
-            .filter((w) => typeof w?.lat === "number" && typeof w?.lon === "number")
-            .map((w) => [w.lat, w.lon]);
-          if (boundsCoords.length > 0) {
-            try {
-              mapRef.current.fitBounds(boundsCoords, { padding: [30, 30] });
-            } catch (e) {}
-          }
-        }
+    if (coords.length > 1) {
+      L.polyline(coords, { color: "#22c55e", weight: 2 }).addTo(layer);
+      if (coords.length > 2) {
+        L.polygon(coords, { color: "#22c55e", weight: 1, fillColor: "#22c55e", fillOpacity: 0.1 }).addTo(layer);
       }
-    } catch (err) {
-      console.error("Error drawing map layers:", err);
     }
-  }, [creating, newWaypoints, selected]);
+
+    if (!creating) {
+      targets.forEach((t) => {
+        L.marker([t.lat, t.lon], {
+          icon: L.divIcon({
+            className: "custom-target-marker",
+            html: `<div class="target-square"><span class="warn-excl">⚠️</span></div>`,
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
+          }),
+        })
+          .bindTooltip(`Mục tiêu #${t.id} · ${t.class} · ${t.distance_m ?? "-"}m`)
+          .addTo(layer);
+      });
+    }
+
+    if (coords.length && mapRef.current && !creating) {
+      mapRef.current.fitBounds(coords, { padding: [30, 30], maxZoom: 16 });
+    }
+  }, [creating, newWaypoints, selectedKey, targets]);
+
+  // Ghim điểm + thước đo khoảng cách
+  useEffect(() => {
+    const layer = toolLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    pins.forEach((p) =>
+      L.marker([p.lat, p.lon])
+        .bindTooltip(`${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`, { permanent: true, direction: "top", offset: [-15, -12] })
+        .addTo(layer)
+    );
+    if (measurePts.length) {
+      const latlngs = measurePts.map((p) => L.latLng(p.lat, p.lon));
+      latlngs.forEach((ll) => L.circleMarker(ll, { radius: 4, color: "#facc15", fillOpacity: 1 }).addTo(layer));
+      if (latlngs.length > 1) {
+        const meters = latlngs.slice(1).reduce((sum, ll, i) => sum + latlngs[i].distanceTo(ll), 0);
+        L.polyline(latlngs, { color: "#facc15", weight: 2, dashArray: "6 4" })
+          .bindTooltip(meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`, {
+            permanent: true,
+            className: "measure-tooltip",
+          })
+          .addTo(layer);
+      }
+    }
+  }, [pins, measurePts]);
 
   useEffect(() => {
-    if (!telemetry || !markerRef.current || typeof telemetry.lat !== "number" || typeof telemetry.lon !== "number") return;
-    try {
-      markerRef.current.setLatLng([telemetry.lat, telemetry.lon]);
-    } catch (e) {}
+    if (!markerRef.current || typeof telemetry?.lat !== "number" || typeof telemetry?.lon !== "number") return;
+    markerRef.current.setLatLng([telemetry.lat, telemetry.lon]);
   }, [telemetry]);
+
+  function openCreate(prefill = {}) {
+    setEditingId(null);
+    setNewWaypoints([]);
+    setForm({ ...emptyForm(form.uav_id || safeUavs[0]?.id || ""), ...prefill });
+    setMapTool(null);
+    setCreating(true);
+    setActiveTab("danh-sach");
+  }
+
+  function openEdit(m) {
+    setEditingId(m.id);
+    setNewWaypoints(Array.isArray(m.waypoints) ? m.waypoints : []);
+    setForm({
+      name: m.name,
+      uav_id: m.uav_id,
+      priority: m.priority || "medium",
+      description: m.description || "",
+      expected_end: toLocalInput(new Date(m.expected_end_at || Date.now() + 3600_000)),
+    });
+    setMapTool(null);
+    setCreating(true);
+    setActiveTab("danh-sach");
+  }
+
+  function closeForm() {
+    setCreating(false);
+    setEditingId(null);
+    setNewWaypoints([]);
+  }
 
   async function submitMission(e) {
     e.preventDefault();
-    if (!form.name || !form.uav_id || newWaypoints.length === 0) return;
-    const res = await createMission({
-      name: form.name,
+    if (!form.name.trim()) return alert("Nhập tên nhiệm vụ");
+    if (!form.uav_id) return alert("Chọn UAV thực hiện");
+    if (newWaypoints.length === 0) return alert("Click lên bản đồ để thêm ít nhất 1 điểm bay");
+    const body = {
+      name: form.name.trim(),
       uav_id: Number(form.uav_id),
       priority: form.priority,
       description: form.description,
       waypoints: newWaypoints,
-      started_at: `${toLocalInput(new Date())}:00Z`,
-      expected_end_at: `${form.expected_end}:00Z`,
-    });
-    setCreating(false);
-    setNewWaypoints([]);
-    setForm({ ...form, name: "", description: "" });
-    if (res?.id) setSelectedId(res.id);
+      expected_end_at: toUtcIso(new Date(form.expected_end)),
+    };
+    if (editingId) {
+      await patchMission(editingId, body);
+      setSelectedId(editingId);
+    } else {
+      const res = await createMission({ ...body, started_at: toUtcIso(new Date()) });
+      if (res?.id) setSelectedId(res.id);
+    }
+    closeForm();
     refresh();
   }
 
-  async function setStatus(status) {
+  async function setStatus(mission, status) {
+    if (!mission) return;
+    if (status === "cancelled" && !confirm(`Huỷ nhiệm vụ "${mission.name}"?`)) return;
+    await patchMission(mission.id, { status });
+    refresh();
+  }
+
+  async function remove(m) {
+    if (!confirm(`Xoá nhiệm vụ "${m.name}"? Không thể hoàn tác.`)) return;
+    await deleteMission(m.id);
+    if (selectedId === m.id) setSelectedId(null);
+    refresh();
+  }
+
+  async function watchLive() {
     if (!selected) return;
-    await patchMission(selected.id, { status });
-    refresh();
+    await activateUAV(selected.uav_id);
+    onNavigateTab?.("live");
   }
 
-  async function remove(id) {
-    await deleteMission(id);
-    if (selectedId === id) setSelectedId(null);
-    refresh();
-  }
+  const toggleFullscreen = (el) => {
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else el.requestFullscreen().catch(() => {});
+  };
+
+  const clearMapTools = () => {
+    setPins([]);
+    setMeasurePts([]);
+    setMapTool(null);
+    if (creating) setNewWaypoints([]);
+  };
+
+  const filtersActive = search || statusFilter || uavFilter || priorityFilter;
+  const resetFilters = () => {
+    setSearch("");
+    setStatusFilter("");
+    setUavFilter("");
+    setPriorityFilter("");
+    setPage(1);
+  };
 
   const filtered = safeMissions.filter((m) => {
-    if (search && !m.name.toLowerCase().includes(search.toLowerCase()) && !(m.code || "").toLowerCase().includes(search.toLowerCase())) return false;
+    const q = search.toLowerCase();
+    if (q && !m.name.toLowerCase().includes(q) && !(m.code || "").toLowerCase().includes(q)) return false;
     if (statusFilter && m.status !== statusFilter) return false;
     if (uavFilter && String(m.uav_id) !== uavFilter) return false;
     if (priorityFilter && m.priority !== priorityFilter) return false;
@@ -373,76 +489,71 @@ export default function Missions({ payload }) {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const total = 15; // matching reference mockup total count
-  const activeCount = safeMissions.filter((m) => m.status === "active").length || 2;
-  const completedCount = safeMissions.filter((m) => m.status === "completed").length || 9;
-  const failedOrCancelledCount = safeMissions.filter((m) => m.status === "cancelled" || m.status === "failed").length || 4;
+  const uavName = (id) => safeUavs.find((u) => u.id === id)?.name || `UAV #${id}`;
+  const missionCode = (m) => m.code || `MSN_${String(m.id).padStart(3, "0")}`;
+
+  const total = safeMissions.length;
+  const pct = (n) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
+  const activeCount = safeMissions.filter((m) => m.status === "active").length;
+  const completedCount = safeMissions.filter((m) => m.status === "completed").length;
+  const failedOrCancelledCount = safeMissions.filter((m) => m.status === "cancelled" || m.status === "failed").length;
+  const totalFlownMin = Math.round(safeMissions.reduce((s, m) => s + flownMs(m), 0) / 60_000);
+
+  const exportCsv = () =>
+    csvDownload(`nhiem_vu_${Date.now()}.csv`, [
+      ["Mã", "Tên", "UAV", "Trạng thái", "Ưu tiên", "Bắt đầu", "Kết thúc dự kiến", "Tiến độ %"],
+      ...filtered.map((m) => [
+        missionCode(m),
+        m.name,
+        uavName(m.uav_id),
+        STATUS_LABEL[m.status] || m.status,
+        PRIORITY_LABEL[m.priority] || m.priority,
+        fmtTime(m.started_at),
+        fmtTime(m.expected_end_at),
+        Math.round(m.progress_pct ?? 0),
+      ]),
+    ]);
 
   const isLive = selected && payload?.active_uav_id === selected.uav_id;
+  const assignedUav = safeUavs.find((u) => u.id === selected?.uav_id);
+  const assignedName = assignedUav ? `${assignedUav.name} - ${assignedUav.type || "UAV"}` : "-";
+  const flyingFor = assignedUav?.flying_since ? fmtDuration(Date.now() - new Date(assignedUav.flying_since).getTime()) : "-";
+  const distFromBase =
+    typeof telemetry?.lat === "number" ? L.latLng(START).distanceTo(L.latLng(telemetry.lat, telemetry.lon)) : null;
+  const alertCount = timeline.filter((e) => e.type === "alert").length;
+  // YOLO có thể sinh hàng trăm cảnh báo/nhiệm vụ — chỉ vẽ 20 cảnh báo mới nhất, giữ đủ mốc tạo/cất cánh/điểm bay
+  const MAX_ALERTS_SHOWN = 20;
+  const shownTimeline = [
+    ...timeline.filter((e) => e.type !== "alert"),
+    ...timeline.filter((e) => e.type === "alert").slice(-MAX_ALERTS_SHOWN),
+  ].sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
-  const assignedUav = safeUavs.find((u) => u.id === selected?.uav_id) || {
-    name: selected?.uav_id ? `UAV_0${selected.uav_id}` : "UAV_02",
-    type: "Eagle Pro",
-  };
+  // Lịch: gom nhiệm vụ theo ngày bắt đầu
+  const scheduleGroups = [...filtered]
+    .sort((a, b) => (a.started_at || "").localeCompare(b.started_at || ""))
+    .reduce((acc, m) => {
+      const day = m.started_at ? new Date(m.started_at).toLocaleDateString("vi-VN") : "Chưa xếp lịch";
+      (acc[day] ||= []).push(m);
+      return acc;
+    }, {});
 
-  // Mock timeline nodes matching the screenshot
-  const timelineEvents = [
-    { time: "18:20:00", title: "Nhiệm vụ được tạo", subtitle: "admin", color: "blue" },
-    { time: "18:21:15", title: "UAV cất cánh", subtitle: assignedUav.name, color: "green" },
-    { time: "18:22:30", title: "Đến điểm 1", subtitle: "Waypoint 1", color: "green" },
-    { time: "18:25:10", title: "Phát hiện mục tiêu", subtitle: "Target_01", color: "red" },
-    { time: "18:28:45", title: "Đến điểm 2", subtitle: "Waypoint 2", color: "green" },
-    { time: "18:31:20", title: "Phát hiện mục tiêu", subtitle: "Target_02", color: "red" },
-    { time: "18:34:50", title: "Đang di chuyển", subtitle: "Waypoint 3", color: "blue" },
-  ];
+  const rowActions = (m) => [
+    m.status === "active"
+      ? { label: "Tạm dừng", icon: Pause, run: () => setStatus(m, "paused") }
+      : m.status === "paused"
+      ? { label: "Tiếp tục", icon: Play, run: () => setStatus(m, "active") }
+      : null,
+    m.status === "active" || m.status === "paused"
+      ? { label: "Đánh dấu hoàn thành", icon: CheckCircle2, run: () => setStatus(m, "completed") }
+      : null,
+    m.status === "active" || m.status === "paused"
+      ? { label: "Huỷ nhiệm vụ", icon: XCircle, run: () => setStatus(m, "cancelled") }
+      : null,
+    { label: "Xoá", icon: Trash2, run: () => remove(m), danger: true },
+  ].filter(Boolean);
 
   return (
     <div className="missions-page-v2">
-      {/* Top Header */}
-      <div className="dashboard-header-bar">
-        <div className="header-left-title">
-          <div className="page-title-icon">
-            <Flag size={20} className="text-emerald-400" />
-          </div>
-          <div>
-            <h1 className="page-main-title">NHIỆM VỤ</h1>
-            <div className="breadcrumb-trail">
-              <span>Trang chủ</span>
-              <ChevronRight size={12} className="mx-1 opacity-50" />
-              <span className="text-emerald-400">Nhiệm vụ</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="header-right-badges">
-          <div className="header-badge-item">
-            <Crosshair size={14} className="text-emerald-400" />
-            <span>GPS <strong>12</strong></span>
-          </div>
-          <div className="header-badge-item">
-            <Wifi size={14} className="text-emerald-400" />
-            <span>Liên kết <strong className="text-emerald-400">Strong</strong></span>
-          </div>
-          <div className="header-badge-item">
-            <Battery size={14} className="text-emerald-400" />
-            <span>Pin hệ thống <strong className="text-emerald-400">78%</strong></span>
-          </div>
-          <div className="header-badge-item time-badge">
-            <Clock size={14} className="text-slate-400" />
-            <span>18:42:10 13/05/2024</span>
-          </div>
-          <div className="user-profile-chip">
-            <div className="avatar-circle">
-              <User size={15} color="#e2e8f0" />
-            </div>
-            <div className="user-text">
-              <span className="user-name">admin</span>
-              <span className="user-role">Quản trị viên</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* 5 Top Summary Stat Cards */}
       <div className="stats-grid-5">
         <div className="summary-stat-card">
@@ -453,7 +564,6 @@ export default function Missions({ payload }) {
             <span className="stat-title">TỔNG NHIỆM VỤ</span>
             <div className="stat-value-group">
               <span className="stat-number">{total}</span>
-              <span className="stat-trend trend-up">▲ 20% so với tuần trước</span>
             </div>
           </div>
         </div>
@@ -466,7 +576,7 @@ export default function Missions({ payload }) {
             <span className="stat-title">ĐANG THỰC HIỆN</span>
             <div className="stat-value-group">
               <span className="stat-number text-emerald-400">{activeCount}</span>
-              <span className="stat-trend text-slate-400">13.3%</span>
+              <span className="stat-trend text-slate-400">{pct(activeCount)}</span>
             </div>
           </div>
         </div>
@@ -479,7 +589,7 @@ export default function Missions({ payload }) {
             <span className="stat-title">HOÀN THÀNH</span>
             <div className="stat-value-group">
               <span className="stat-number text-emerald-400">{completedCount}</span>
-              <span className="stat-trend text-slate-400">60%</span>
+              <span className="stat-trend text-slate-400">{pct(completedCount)}</span>
             </div>
           </div>
         </div>
@@ -492,7 +602,7 @@ export default function Missions({ payload }) {
             <span className="stat-title">THẤT BẠI / HỦY</span>
             <div className="stat-value-group">
               <span className="stat-number text-rose-400">{failedOrCancelledCount}</span>
-              <span className="stat-trend text-slate-400">26.7%</span>
+              <span className="stat-trend text-slate-400">{pct(failedOrCancelledCount)}</span>
             </div>
           </div>
         </div>
@@ -504,8 +614,9 @@ export default function Missions({ payload }) {
           <div className="stat-content">
             <span className="stat-title">TỔNG THỜI GIAN BAY</span>
             <div className="stat-value-group">
-              <span className="stat-number">28h 45m</span>
-              <span className="stat-trend trend-up">▲ 12% so với tuần trước</span>
+              <span className="stat-number">
+                {Math.floor(totalFlownMin / 60)}h {totalFlownMin % 60}m
+              </span>
             </div>
           </div>
         </div>
@@ -513,45 +624,56 @@ export default function Missions({ payload }) {
 
       {/* Main Grid: Left Column & Right Sidebar */}
       <div className="missions-main-grid">
-        {/* Left Column */}
         <div className="missions-left-col">
           {/* Panel 1: Mission Table Card */}
           <div className="dashboard-panel missions-table-panel">
             <div className="panel-tabs-header">
               <div className="nav-tabs-list">
-                <button
-                  className={`tab-item ${activeTab === "danh-sach" ? "active" : ""}`}
-                  onClick={() => setActiveTab("danh-sach")}
-                >
-                  DANH SÁCH NHIỆM VỤ
-                </button>
-                <button
-                  className={`tab-item ${activeTab === "lich" ? "active" : ""}`}
-                  onClick={() => setActiveTab("lich")}
-                >
-                  LỊCH NHIỆM VỤ
-                </button>
-                <button
-                  className={`tab-item ${activeTab === "mau" ? "active" : ""}`}
-                  onClick={() => setActiveTab("mau")}
-                >
-                  MẪU NHIỆM VỤ
-                </button>
+                {[
+                  ["danh-sach", "DANH SÁCH NHIỆM VỤ"],
+                  ["lich", "LỊCH NHIỆM VỤ"],
+                  ["mau", "MẪU NHIỆM VỤ"],
+                ].map(([key, label]) => (
+                  <button key={key} className={`tab-item ${activeTab === key ? "active" : ""}`} onClick={() => setActiveTab(key)}>
+                    {label}
+                  </button>
+                ))}
               </div>
 
               <div className="tab-header-actions">
-                <button className="btn-create-mission" onClick={() => setCreating((c) => !c)}>
+                <button className="btn-create-mission" onClick={() => (creating ? closeForm() : openCreate())}>
                   {creating ? <X size={15} /> : <span className="mr-1">+</span>}
                   {creating ? "Đóng" : "Tạo nhiệm vụ"}
                 </button>
-                <button className="btn-options-dots">
-                  <MoreVertical size={16} />
-                </button>
+                <div className="msn-menu-anchor">
+                  <button
+                    className="btn-options-dots"
+                    title="Tuỳ chọn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setHeaderMenuOpen((o) => !o);
+                      setRowMenuId(null);
+                    }}
+                  >
+                    <MoreVertical size={16} />
+                  </button>
+                  {headerMenuOpen && (
+                    <div className="msn-dropdown" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => (refresh(), setHeaderMenuOpen(false))}>
+                        <RefreshCw size={14} /> Làm mới
+                      </button>
+                      <button onClick={() => (exportCsv(), setHeaderMenuOpen(false))}>
+                        <Download size={14} /> Xuất CSV ({filtered.length})
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
             {creating && (
               <form onSubmit={submitMission} className="create-mission-form">
+                <div className="msn-form-title">{editingId ? "Sửa nhiệm vụ" : "Tạo nhiệm vụ mới"}</div>
                 <div className="form-grid">
                   <input
                     placeholder="Tên nhiệm vụ..."
@@ -559,28 +681,21 @@ export default function Missions({ payload }) {
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                     className="form-input"
                   />
-                  <select
-                    value={form.uav_id}
-                    onChange={(e) => setForm({ ...form, uav_id: e.target.value })}
-                    className="form-select"
-                  >
+                  <select value={form.uav_id} onChange={(e) => setForm({ ...form, uav_id: e.target.value })} className="form-select">
                     {safeUavs.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.name} ({u.type || "UAV"})
                       </option>
                     ))}
                   </select>
-                  <select
-                    value={form.priority}
-                    onChange={(e) => setForm({ ...form, priority: e.target.value })}
-                    className="form-select"
-                  >
+                  <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="form-select">
                     <option value="high">Ưu tiên cao</option>
                     <option value="medium">Ưu tiên trung bình</option>
                     <option value="low">Ưu tiên thấp</option>
                   </select>
                   <input
                     type="datetime-local"
+                    title="Thời gian kết thúc dự kiến"
                     value={form.expected_end}
                     onChange={(e) => setForm({ ...form, expected_end: e.target.value })}
                     className="form-input"
@@ -596,268 +711,374 @@ export default function Missions({ payload }) {
                 </div>
                 <div className="waypoint-picker-info mt-2">
                   <span className="text-slate-300 text-xs">
-                    💡 Click trực tiếp trên bản đồ bên dưới để thêm waypoint ({newWaypoints.length} điểm đã chọn)
+                    💡 Click trực tiếp trên bản đồ bên dưới để thêm điểm bay ({newWaypoints.length} điểm đã chọn)
                   </span>
                   <div className="flex gap-2">
+                    <button type="button" className="btn-secondary" onClick={() => setNewWaypoints((w) => w.slice(0, -1))}>
+                      Bỏ điểm cuối
+                    </button>
                     <button type="button" className="btn-secondary" onClick={() => setNewWaypoints([])}>
                       Xoá điểm
                     </button>
                     <button type="submit" className="btn-primary">
-                      Lưu nhiệm vụ
+                      {editingId ? "Lưu thay đổi" : "Lưu nhiệm vụ"}
                     </button>
                   </div>
                 </div>
               </form>
             )}
 
-            {/* Filter Bar */}
-            <div className="filter-toolbar">
-              <div className="search-input-wrapper">
-                <Search size={15} className="search-icon" />
-                <input
-                  placeholder="Tìm kiếm nhiệm vụ..."
-                  value={search}
+            {activeTab !== "mau" && (
+              <div className="filter-toolbar">
+                <div className="search-input-wrapper">
+                  <Search size={15} className="search-icon" />
+                  <input
+                    placeholder="Tìm kiếm nhiệm vụ..."
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }}
+                    className="table-search-input"
+                  />
+                </div>
+
+                <select
+                  value={statusFilter}
                   onChange={(e) => {
-                    setSearch(e.target.value);
+                    setStatusFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="table-search-input"
-                />
+                  className="filter-select"
+                >
+                  <option value="">Trạng thái: Tất cả</option>
+                  {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={uavFilter}
+                  onChange={(e) => {
+                    setUavFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="filter-select"
+                >
+                  <option value="">UAV: Tất cả</option>
+                  {safeUavs.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={priorityFilter}
+                  onChange={(e) => {
+                    setPriorityFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="filter-select"
+                >
+                  <option value="">Ưu tiên: Tất cả</option>
+                  {Object.entries(PRIORITY_LABEL).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  className={`btn-filter-icon ${filtersActive ? "active" : ""}`}
+                  onClick={resetFilters}
+                  disabled={!filtersActive}
+                  title="Xoá toàn bộ bộ lọc"
+                >
+                  {filtersActive ? <X size={15} /> : <Filter size={15} />}
+                  <span>{filtersActive ? "Xoá lọc" : "Bộ lọc"}</span>
+                </button>
               </div>
+            )}
 
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="filter-select"
-              >
-                <option value="">Trạng thái: Tất cả</option>
-                {Object.entries(STATUS_LABEL).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
+            {activeTab === "danh-sach" && (
+              <>
+                <div className="table-responsive">
+                  <table className="missions-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>TÊN NHIỆM VỤ</th>
+                        <th>MỤC TIÊU</th>
+                        <th>UAV</th>
+                        <th>TRẠNG THÁI</th>
+                        <th>ƯU TIÊN</th>
+                        <th>BẮT ĐẦU</th>
+                        <th>TIẾN ĐỘ</th>
+                        <th className="text-center">THAO TÁC</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageItems.map((m) => {
+                        const isSelected = m.id === selected?.id;
+                        return (
+                          <tr
+                            key={m.id}
+                            className={`table-row ${isSelected ? "selected-row" : ""}`}
+                            onClick={() => setSelectedId(m.id)}
+                          >
+                            <td className="cell-id">{missionCode(m)}</td>
+                            <td className="cell-name">{m.name}</td>
+                            <td className="cell-targets">{m.target_count ?? 0} mục tiêu</td>
+                            <td className="cell-uav">{uavName(m.uav_id)}</td>
+                            <td className="cell-status">
+                              <span className={`badge-pill ${STATUS_CLASS[m.status] || "badge-neutral"}`}>
+                                {STATUS_LABEL[m.status] || m.status}
+                              </span>
+                            </td>
+                            <td className="cell-priority">
+                              <span className={`priority-text ${PRIORITY_CLASS[m.priority]}`}>{PRIORITY_LABEL[m.priority]}</span>
+                            </td>
+                            <td className="cell-time">{fmtTime(m.started_at)}</td>
+                            <td className="cell-progress">
+                              <div className="progress-cell-wrapper">
+                                <div className="progress-bar-track">
+                                  <div
+                                    className={`progress-bar-fill ${m.status === "failed" ? "bg-rose-500" : "bg-emerald-400"}`}
+                                    style={{ width: `${m.progress_pct ?? 0}%` }}
+                                  />
+                                </div>
+                                <span className="progress-pct-text">{Math.round(m.progress_pct ?? 0)}%</span>
+                              </div>
+                            </td>
+                            <td className="cell-actions text-center">
+                              <div className="action-buttons-group msn-menu-anchor">
+                                <button
+                                  className="action-btn icon-view"
+                                  title="Xem chi tiết"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedId(m.id);
+                                  }}
+                                >
+                                  <Eye size={15} />
+                                </button>
+                                <button
+                                  className="action-btn icon-edit"
+                                  title="Chỉnh sửa"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedId(m.id);
+                                    openEdit(m);
+                                  }}
+                                >
+                                  <Edit3 size={15} />
+                                </button>
+                                <button
+                                  className="action-btn icon-more"
+                                  title="Thao tác khác"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setHeaderMenuOpen(false);
+                                    setRowMenuId((id) => (id === m.id ? null : m.id));
+                                  }}
+                                >
+                                  <MoreVertical size={15} />
+                                </button>
+                                {rowMenuId === m.id && (
+                                  <div className="msn-dropdown" onClick={(e) => e.stopPropagation()}>
+                                    {rowActions(m).map((a) => (
+                                      <button
+                                        key={a.label}
+                                        className={a.danger ? "danger" : ""}
+                                        onClick={() => {
+                                          setRowMenuId(null);
+                                          a.run();
+                                        }}
+                                      >
+                                        <a.icon size={14} /> {a.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {pageItems.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="text-center py-6 text-slate-400">
+                            Không tìm thấy nhiệm vụ phù hợp
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-              <select
-                value={uavFilter}
-                onChange={(e) => {
-                  setUavFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="filter-select"
-              >
-                <option value="">UAV: Tất cả</option>
-                {safeUavs.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+                <div className="table-pagination-footer">
+                  <span className="pagination-info">
+                    Hiển thị {pageItems.length ? (page - 1) * PAGE_SIZE + 1 : 0} đến {(page - 1) * PAGE_SIZE + pageItems.length} của{" "}
+                    {filtered.length} nhiệm vụ
+                  </span>
+                  <div className="pagination-pages">
+                    <button className="page-nav-btn" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                      <ChevronLeft size={16} />
+                    </button>
+                    {[...Array(pageCount)].map((_, idx) => (
+                      <button
+                        key={idx}
+                        className={`page-num-btn ${page === idx + 1 ? "active" : ""}`}
+                        onClick={() => setPage(idx + 1)}
+                      >
+                        {idx + 1}
+                      </button>
+                    ))}
+                    <button
+                      className="page-nav-btn"
+                      disabled={page >= pageCount}
+                      onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
 
-              <select
-                value={priorityFilter}
-                onChange={(e) => {
-                  setPriorityFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="filter-select"
-              >
-                <option value="">Ưu tiên: Tất cả</option>
-                {Object.entries(PRIORITY_LABEL).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-
-              <button className="btn-filter-icon">
-                <Filter size={15} />
-                <span>Bộ lọc</span>
-              </button>
-            </div>
-
-            {/* Mission Data Table */}
-            <div className="table-responsive">
-              <table className="missions-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>TÊN NHIỆM VỤ</th>
-                    <th>MỤC TIÊU</th>
-                    <th>UAV</th>
-                    <th>TRẠNG THÁI</th>
-                    <th>ƯU TIÊN</th>
-                    <th>THỜI GIAN</th>
-                    <th>TIẾN ĐỘ</th>
-                    <th className="text-center">THAO TÁC</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageItems.map((m) => {
-                    const isSelected = m.id === selected?.id;
-                    const uavObj = safeUavs.find((u) => u.id === m.uav_id);
-                    const targetCountText = `${m.target_count || (m.id === 1 ? 6 : m.id === 2 ? 4 : 5)} mục tiêu`;
-                    return (
-                      <tr
+            {activeTab === "lich" && (
+              <div className="msn-schedule">
+                {Object.keys(scheduleGroups).length === 0 && <div className="msn-empty">Không có nhiệm vụ phù hợp</div>}
+                {Object.entries(scheduleGroups).map(([day, list]) => (
+                  <div key={day} className="msn-schedule-day">
+                    <div className="msn-schedule-date">{day}</div>
+                    {list.map((m) => (
+                      <button
                         key={m.id}
-                        className={`table-row ${isSelected ? "selected-row" : ""}`}
+                        className={`msn-schedule-item ${m.id === selected?.id ? "selected" : ""}`}
                         onClick={() => setSelectedId(m.id)}
                       >
-                        <td className="cell-id">{m.code || `MSN_20240513_00${m.id}`}</td>
-                        <td className="cell-name">{m.name}</td>
-                        <td className="cell-targets">{targetCountText}</td>
-                        <td className="cell-uav">{uavObj?.name || `UAV_0${m.uav_id}`}</td>
-                        <td className="cell-status">
-                          {m.status === "active" ? (
-                            <span className="badge-pill badge-active">ĐANG THỰC HIỆN</span>
-                          ) : m.status === "completed" ? (
-                            <span className="text-emerald-400 font-semibold text-xs flex items-center gap-1">
-                              <span className="dot-online bg-emerald-400"></span> HOÀN THÀNH
-                            </span>
-                          ) : m.status === "failed" ? (
-                            <span className="badge-pill badge-failed">THẤT BẠI</span>
-                          ) : (
-                            <span className="badge-pill badge-neutral">{STATUS_LABEL[m.status]}</span>
-                          )}
-                        </td>
-                        <td className="cell-priority">
-                          <span className={`priority-text ${PRIORITY_CLASS[m.priority]}`}>
-                            {PRIORITY_LABEL[m.priority]}
-                          </span>
-                        </td>
-                        <td className="cell-time">{fmtTime(m.started_at)}</td>
-                        <td className="cell-progress">
-                          <div className="progress-cell-wrapper">
-                            <div className="progress-bar-track">
-                              <div
-                                className={`progress-bar-fill ${m.status === "failed" ? "bg-rose-500" : "bg-emerald-400"}`}
-                                style={{ width: `${m.progress_pct}%` }}
-                              />
-                            </div>
-                            <span className="progress-pct-text">{Math.round(m.progress_pct)}%</span>
-                          </div>
-                        </td>
-                        <td className="cell-actions text-center">
-                          <div className="action-buttons-group">
-                            <button
-                              className="action-btn icon-view"
-                              title="Xem chi tiết"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedId(m.id);
-                              }}
-                            >
-                              <Eye size={15} />
-                            </button>
-                            <button
-                              className="action-btn icon-edit"
-                              title="Chỉnh sửa"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Edit3 size={15} />
-                            </button>
-                            <button
-                              className="action-btn icon-more"
-                              title="Thao tác khác"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MoreVertical size={15} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {pageItems.length === 0 && (
-                    <tr>
-                      <td colSpan={9} className="text-center py-6 text-slate-400">
-                        Không tìm thấy nhiệm vụ phù hợp
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination footer */}
-            <div className="table-pagination-footer">
-              <span className="pagination-info">
-                Hiển thị {pageItems.length ? (page - 1) * PAGE_SIZE + 1 : 0} đến{" "}
-                {(page - 1) * PAGE_SIZE + pageItems.length} của {filtered.length} nhiệm vụ
-              </span>
-              <div className="pagination-pages">
-                <button
-                  className="page-nav-btn"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                {[...Array(pageCount)].map((_, idx) => (
-                  <button
-                    key={idx}
-                    className={`page-num-btn ${page === idx + 1 ? "active" : ""}`}
-                    onClick={() => setPage(idx + 1)}
-                  >
-                    {idx + 1}
-                  </button>
+                        <span className="msn-schedule-time">
+                          {m.started_at ? new Date(m.started_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
+                          {" → "}
+                          {m.expected_end_at
+                            ? new Date(m.expected_end_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+                            : "--:--"}
+                        </span>
+                        <span className="msn-schedule-name">{m.name}</span>
+                        <span className="msn-schedule-uav">{uavName(m.uav_id)}</span>
+                        <span className={`badge-pill ${STATUS_CLASS[m.status] || "badge-neutral"}`}>{STATUS_LABEL[m.status] || m.status}</span>
+                      </button>
+                    ))}
+                  </div>
                 ))}
-                <button
-                  className="page-nav-btn"
-                  disabled={page >= pageCount}
-                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                >
-                  <ChevronRight size={16} />
-                </button>
               </div>
-            </div>
+            )}
+
+            {activeTab === "mau" && (
+              <div className="msn-templates">
+                {TEMPLATES.map((t) => (
+                  <div key={t.name} className="msn-template-card">
+                    <div className="msn-template-head">
+                      <span className="msn-template-name">{t.name}</span>
+                      <span className={`priority-text ${PRIORITY_CLASS[t.priority]}`}>{PRIORITY_LABEL[t.priority]}</span>
+                    </div>
+                    <p className="msn-template-desc">{t.description}</p>
+                    <div className="msn-template-foot">
+                      <span>
+                        <Clock size={12} /> {t.durationMin} phút
+                      </span>
+                      <button
+                        className="btn-primary"
+                        onClick={() =>
+                          openCreate({
+                            name: t.name,
+                            description: t.description,
+                            priority: t.priority,
+                            expected_end: toLocalInput(new Date(Date.now() + t.durationMin * 60_000)),
+                          })
+                        }
+                      >
+                        Dùng mẫu
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Lower Grid: Map & Live Video Stream Side by Side */}
           <div className="missions-lower-2col">
-            {/* Map Card */}
-            <div className="dashboard-panel lower-panel">
+            <div className="dashboard-panel lower-panel" ref={mapPanelRef}>
               <div className="panel-section-header">
                 <h3 className="section-title">BẢN ĐỒ NHIỆM VỤ</h3>
                 <div className="section-header-actions">
-                  <button className="icon-tool-btn" title="Phóng to bản đồ">
+                  <button className="icon-tool-btn" title="Toàn màn hình" onClick={() => toggleFullscreen(mapPanelRef.current)}>
                     <Maximize2 size={15} />
                   </button>
                 </div>
               </div>
 
               <div className="panel-map-container">
-                {/* Left Map Toolbar matching screenshot (5 Individual Square Buttons) */}
                 <div className="map-left-toolbar-individual">
-                  <button className="map-single-btn" title="Lớp bản đồ">
+                  <button
+                    className="map-single-btn"
+                    title={baseLayer === "satellite" ? "Chuyển sang bản đồ đường phố" : "Chuyển sang ảnh vệ tinh"}
+                    onClick={() => setBaseLayer((b) => (b === "satellite" ? "street" : "satellite"))}
+                  >
                     <Layers size={18} />
                   </button>
-                  <button className="map-single-btn" title="Vẽ khu vực polygon">
+                  <button
+                    className={`map-single-btn ${creating ? "active" : ""}`}
+                    title="Vẽ khu vực nhiệm vụ mới (click lên bản đồ để thêm điểm)"
+                    onClick={() => (creating ? closeForm() : openCreate())}
+                  >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M14 4L20 9.5V17.5L11 20.5L4 16V8L14 4Z" />
                       <circle cx="14" cy="4" r="2" fill="currentColor" />
                     </svg>
                   </button>
-                  <button className="map-single-btn" title="Thêm ghim điểm">
+                  <button
+                    className={`map-single-btn ${mapTool === "pin" ? "active" : ""}`}
+                    title="Ghim điểm (click lên bản đồ)"
+                    disabled={creating}
+                    onClick={() => setMapTool((t) => (t === "pin" ? null : "pin"))}
+                  >
                     <MapPin size={18} />
                   </button>
-                  <button className="map-single-btn" title="Đo khoảng cách">
+                  <button
+                    className={`map-single-btn ${mapTool === "measure" ? "active" : ""}`}
+                    title="Đo khoảng cách (click nhiều điểm)"
+                    disabled={creating}
+                    onClick={() => {
+                      setMapTool((t) => (t === "measure" ? null : "measure"));
+                      setMeasurePts([]);
+                    }}
+                  >
                     <Ruler size={18} />
                   </button>
-                  <button className="map-single-btn" title="Xóa chọn">
+                  <button className="map-single-btn" title="Xoá ghim, thước đo và điểm đang vẽ" onClick={clearMapTools}>
                     <Trash2 size={18} />
                   </button>
                 </div>
 
-                {/* Top Right Expand tool */}
-                <button className="map-top-right-expand" title="Mở rộng">
+                <button
+                  className="map-top-right-expand"
+                  title="Căn lại theo nhiệm vụ"
+                  onClick={() => {
+                    const wps = (creating ? newWaypoints : selected?.waypoints ?? []).map((w) => [w.lat, w.lon]);
+                    if (wps.length) mapRef.current?.fitBounds(wps, { padding: [30, 30], maxZoom: 16 });
+                    else mapRef.current?.setView(START, 14);
+                  }}
+                >
                   <Maximize2 size={14} />
                 </button>
 
-                <div ref={containerRef} className="leaflet-map-element" />
+                <div ref={containerRef} className={`leaflet-map-element ${creating || mapTool ? "crosshair-cursor" : ""}`} />
 
                 <div className="map-bottom-legend">
                   <div className="legend-item">
@@ -870,7 +1091,7 @@ export default function Missions({ payload }) {
                   </div>
                   <div className="legend-item">
                     <span className="legend-square square-target"></span>
-                    <span>Mục tiêu</span>
+                    <span>Mục tiêu ({targets.length})</span>
                   </div>
                   <div className="legend-item">
                     <span className="legend-zone zone-area"></span>
@@ -880,87 +1101,36 @@ export default function Missions({ payload }) {
               </div>
             </div>
 
-            {/* Live Video HUD Card */}
+            {/* Live Video */}
             <div className="dashboard-panel lower-panel">
               <div className="panel-section-header">
                 <h3 className="section-title">TRỰC TIẾP NHIỆM VỤ</h3>
+                {isLive && <span className="live-green-diamond">◆ LIVE · {assignedUav?.name}</span>}
               </div>
 
               <div className="panel-video-container">
-                {/* Aerial stream image feed */}
-                <img
-                  className="live-feed-img"
-                  src="/uav_aerial_feed.png"
-                  alt="UAV Aerial Stream Feed"
-                  onError={(e) => {
-                    e.currentTarget.src = "https://images.unsplash.com/photo-1508614589041-895b88991e3e?auto=format&fit=crop&w=800&q=80";
-                  }}
-                />
-
-                {/* Top Left Tag Overlay */}
-                <div className="uav-live-pill-tag">
-                  <span>{assignedUav.name} - {assignedUav.type || "Eagle Pro"}</span>
-                  <span className="live-green-diamond">◆ LIVE</span>
-                </div>
-
-                {/* Top Right Meta Boxes Overlay */}
-                <div className="top-right-meta-group">
-                  <div className="meta-pill-box">18:42:10</div>
-                  <div className="meta-pill-box rec-box">
-                    <span className="red-circle-dot" />
-                    <span>REC</span>
+                {isLive ? (
+                  <TacticalVideoHUD
+                    isLive
+                    telemetry={payload?.uav_status?.gps}
+                    objects={payload?.objects ?? []}
+                    frameSize={{ width: payload?.uav_status?.frame_width, height: payload?.uav_status?.frame_height }}
+                  />
+                ) : (
+                  <div className="msn-video-offline">
+                    <Radio size={28} />
+                    <p>
+                      {selected
+                        ? `${assignedUav?.name || "UAV"} không phải UAV đang phát trực tiếp.`
+                        : "Chọn một nhiệm vụ để xem trực tiếp."}
+                    </p>
+                    {selected && (
+                      <button className="btn-primary" onClick={() => activateUAV(selected.uav_id).then(refresh)}>
+                        Chuyển luồng video sang {assignedUav?.name || "UAV này"}
+                      </button>
+                    )}
                   </div>
-                </div>
-
-                {/* Right Action Toolbar Stack (2 Grouped Boxes matching screenshot) */}
-                <div className="stream-toolbar-right-grouped">
-                  {/* Group 1: Photo, Video, Target Lock */}
-                  <div className="toolbar-group-box">
-                    <button className="group-btn" title="Chụp ảnh">
-                      <Camera size={16} />
-                    </button>
-                    <div className="group-divider" />
-                    <button className="group-btn" title="Quay video">
-                      <Video size={16} />
-                    </button>
-                    <div className="group-divider" />
-                    <button className="group-btn active-green" title="Khóa mục tiêu">
-                      <Crosshair size={16} />
-                    </button>
-                  </div>
-
-                  {/* Group 2: Zoom factor & Zoom minus */}
-                  <div className="toolbar-group-box">
-                    <button className="group-btn zoom-text-btn">5.2X</button>
-                    <div className="group-divider" />
-                    <button className="group-btn" title="Thu nhỏ">
-                      <Minus size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bottom Telemetry HUD Bar Overlay (With vertical dividers matching screenshot) */}
-                <div className="stream-bottom-telemetry-hud">
-                  <div className="telem-hud-col">
-                    <span className="lbl">ALT</span>
-                    <span className="val val-emerald">120 m</span>
-                  </div>
-                  <div className="hud-v-divider" />
-                  <div className="telem-hud-col">
-                    <span className="lbl">H.SPD</span>
-                    <span className="val val-white">45.2 km/h</span>
-                  </div>
-                  <div className="hud-v-divider" />
-                  <div className="telem-hud-col">
-                    <span className="lbl">V.SPD</span>
-                    <span className="val val-emerald">1.2 m/s</span>
-                  </div>
-                  <div className="hud-v-divider" />
-                  <div className="telem-hud-col">
-                    <span className="lbl">HDG</span>
-                    <span className="val val-emerald">320°</span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -968,53 +1138,44 @@ export default function Missions({ payload }) {
 
         {/* Right Sidebar */}
         <div className="missions-right-sidebar">
-          {/* Card 1: Mission Details */}
           <div className="dashboard-panel sidebar-card">
             <div className="sidebar-card-header">
               <h3 className="sidebar-title">CHI TIẾT NHIỆM VỤ</h3>
-              <span className={`badge-pill ${STATUS_CLASS[selected?.status || "active"]}`}>
-                {STATUS_LABEL[selected?.status || "active"]}
-              </span>
+              {selected && <span className={`badge-pill ${STATUS_CLASS[selected.status]}`}>{STATUS_LABEL[selected.status]}</span>}
             </div>
 
             <div className="mission-details-list">
               <div className="detail-row">
                 <span className="detail-label">ID</span>
-                <span className="detail-value mono font-semibold">{selected?.code || `MSN_20240513_00${selected?.id || 1}`}</span>
+                <span className="detail-value mono font-semibold">{selected ? missionCode(selected) : "-"}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Tên nhiệm vụ</span>
-                <span className="detail-value font-semibold text-slate-100">{selected?.name || "Tuần tra khu vực biên giới A"}</span>
+                <span className="detail-value font-semibold text-slate-100">{selected?.name || "-"}</span>
               </div>
               <div className="detail-row multiline">
                 <span className="detail-label">Mô tả</span>
-                <span className="detail-value text-slate-300 text-xs leading-relaxed">
-                  {selected?.description || "Tuần tra và theo dõi các mục tiêu nghi vấn trong khu vực biên giới A"}
-                </span>
+                <span className="detail-value text-slate-300 text-xs leading-relaxed">{selected?.description || "-"}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">UAV thực hiện</span>
-                <span className="detail-value text-sky-400 font-medium">
-                  {assignedUav.name} - {assignedUav.type || "Eagle Pro"}
-                </span>
+                <span className="detail-value text-sky-400 font-medium">{assignedName}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Thời gian bắt đầu</span>
-                <span className="detail-value">{fmtTime(selected?.started_at) || "18:20 13/05/2024"}</span>
+                <span className="detail-value">{fmtTime(selected?.started_at)}</span>
               </div>
               <div className="detail-row">
-                <span className="detail-label">Thời gian kết thúc dự kiến</span>
-                <span className="detail-value">{fmtTime(selected?.expected_end_at) || "19:20 13/05/2024"}</span>
+                <span className="detail-label">Kết thúc dự kiến</span>
+                <span className="detail-value">{fmtTime(selected?.expected_end_at)}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Khu vực</span>
-                <span className="detail-value">{selected?.area_size || "Khu vực A (12.5 km²)"}</span>
+                <span className="detail-value">{selected?.area_size || assignedUav?.zone || "-"}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Ưu tiên</span>
-                <span className={`detail-value ${PRIORITY_CLASS[selected?.priority || "high"]}`}>
-                  {PRIORITY_LABEL[selected?.priority || "high"]}
-                </span>
+                <span className={`detail-value ${PRIORITY_CLASS[selected?.priority]}`}>{PRIORITY_LABEL[selected?.priority] || "-"}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Người tạo</span>
@@ -1027,97 +1188,94 @@ export default function Missions({ payload }) {
             </div>
 
             <div className="sidebar-action-buttons">
-              <button
-                className="btn-sidebar-action btn-green"
-                onClick={() => activateUAV(selected?.uav_id).then(refresh)}
-              >
+              <button className="btn-sidebar-action btn-green" disabled={!selected} onClick={watchLive}>
                 <Eye size={15} />
                 <span>Xem trực tiếp</span>
               </button>
               {selected?.status === "active" ? (
-                <button className="btn-sidebar-action btn-dark" onClick={() => setStatus("paused")}>
+                <button className="btn-sidebar-action btn-dark" onClick={() => setStatus(selected, "paused")}>
                   <Pause size={15} />
                   <span>Tạm dừng</span>
                 </button>
               ) : (
-                <button className="btn-sidebar-action btn-dark" onClick={() => setStatus("active")}>
+                <button
+                  className="btn-sidebar-action btn-dark"
+                  disabled={!selected || selected.status !== "paused"}
+                  title={selected?.status !== "paused" ? "Chỉ tiếp tục được nhiệm vụ đang tạm dừng" : ""}
+                  onClick={() => setStatus(selected, "active")}
+                >
                   <Play size={15} />
                   <span>Tiếp tục</span>
                 </button>
               )}
-              <button className="btn-sidebar-action btn-danger" onClick={() => setStatus("cancelled")}>
+              <button
+                className="btn-sidebar-action btn-danger"
+                disabled={!selected || !["active", "paused"].includes(selected.status)}
+                onClick={() => setStatus(selected, "cancelled")}
+              >
                 <XCircle size={15} />
                 <span>Hủy nhiệm vụ</span>
               </button>
             </div>
           </div>
 
-          {/* Card 2: UAV Status matching screenshot */}
           <div className="dashboard-panel sidebar-card">
             <div className="sidebar-card-header">
               <h3 className="sidebar-title">TRẠNG THÁI UAV</h3>
-              <span className="badge-green-glow">ĐANG BAY</span>
+              <span className="badge-green-glow">{UAV_STATUS_LABEL[assignedUav?.status] || "-"}</span>
             </div>
-            <div className="uav-subtitle">{assignedUav.name} - {assignedUav.type || "Eagle Pro"}</div>
+            <div className="uav-subtitle">{assignedName}</div>
 
             <div className="uav-status-2col">
-              {/* Left Column: 3D Drone Image */}
               <div className="uav-drone-col">
-                <img
-                  src="/uav_drone.png"
-                  alt="UAV Drone"
-                  className="drone-3d-img"
-                  onError={(e) => {
-                    e.currentTarget.src = "https://images.unsplash.com/photo-1527977966376-1c8408f9f108?auto=format&fit=crop&w=400&q=80";
-                  }}
-                />
+                <img src="/uav_drone.png" alt="UAV Drone" className="drone-3d-img" />
               </div>
 
-              {/* Right Column: Metrics List */}
               <div className="uav-metrics-col">
                 <div className="uav-metric-row">
                   <span className="m-lbl">Pin</span>
                   <div className="m-val-group">
                     <div className="battery-mini-track">
-                      <div className="battery-mini-fill" style={{ width: "78%" }} />
+                      <div className="battery-mini-fill" style={{ width: `${telemetry?.battery_pct ?? 0}%` }} />
                     </div>
-                    <span className="m-val">78%</span>
+                    <span className="m-val">{telemetry?.battery_pct != null ? `${Math.round(telemetry.battery_pct)}%` : "-"}</span>
                   </div>
                 </div>
                 <div className="uav-metric-row">
                   <span className="m-lbl">Thời gian bay</span>
-                  <span className="m-val">28:45</span>
+                  <span className="m-val">{flyingFor}</span>
                 </div>
                 <div className="uav-metric-row">
-                  <span className="m-lbl">Khoảng cách</span>
-                  <span className="m-val">5.2 km</span>
+                  <span className="m-lbl">Cách căn cứ</span>
+                  <span className="m-val">{distFromBase != null ? `${(distFromBase / 1000).toFixed(2)} km` : "-"}</span>
                 </div>
                 <div className="uav-metric-row">
                   <span className="m-lbl">Độ cao</span>
-                  <span className="m-val">120 m</span>
+                  <span className="m-val">{telemetry?.altitude_m != null ? `${telemetry.altitude_m} m` : "-"}</span>
                 </div>
                 <div className="uav-metric-row">
                   <span className="m-lbl">Tốc độ</span>
-                  <span className="m-val">45.2 km/h</span>
+                  <span className="m-val">{telemetry?.speed_kmh != null ? `${telemetry.speed_kmh} km/h` : "-"}</span>
                 </div>
                 <div className="uav-metric-row">
-                  <span className="m-lbl">GPS</span>
-                  <span className="m-val">12</span>
+                  <span className="m-lbl">Hướng</span>
+                  <span className="m-val">{telemetry?.heading_deg != null ? `${telemetry.heading_deg}°` : "-"}</span>
                 </div>
                 <div className="uav-metric-row">
                   <span className="m-lbl">Liên kết</span>
-                  <span className="m-val val-green-signal">
+                  <span className={`m-val ${telemetry?.signal === "Strong" ? "val-green-signal" : ""}`}>
                     <Wifi size={12} />
-                    Strong
+                    {telemetry?.signal || "-"}
                   </span>
                 </div>
               </div>
             </div>
 
-            <button className="btn-uav-detail-green-outline">Xem chi tiết UAV</button>
+            <button className="btn-uav-detail-green-outline" onClick={() => onNavigateTab?.("uavs")}>
+              Xem chi tiết UAV
+            </button>
           </div>
 
-          {/* Card 3: Mission Progress Gauge */}
           <div className="dashboard-panel sidebar-card">
             <div className="sidebar-card-header">
               <h3 className="sidebar-title">TIẾN ĐỘ NHIỆM VỤ</h3>
@@ -1125,25 +1283,25 @@ export default function Missions({ payload }) {
 
             <div className="progress-ring-card-body">
               <div className="progress-gauge-container">
-                <ProgressRing pct={Math.round(selected?.progress_pct || 75)} size={110} strokeWidth={9} />
+                <ProgressRing pct={Math.round(selected?.progress_pct ?? 0)} size={110} strokeWidth={9} />
               </div>
 
               <div className="progress-breakdown">
                 <div className="breakdown-row">
                   <span className="breakdown-label">Đã hoàn thành</span>
                   <span className="breakdown-val font-semibold">
-                    {selected?.waypoints_reached || 9} / {selected?.waypoints?.length || 12} điểm
+                    {selected?.waypoints_reached ?? 0} / {selected?.waypoints?.length ?? 0} điểm
                   </span>
                 </div>
                 <div className="breakdown-row">
-                  <span className="breakdown-label">Mục tiêu phát hiện</span>
-                  <span className="breakdown-val font-semibold text-emerald-400">
-                    4 / {selected?.target_count || 6}
-                  </span>
+                  <span className="breakdown-label">Cảnh báo mục tiêu</span>
+                  <span className="breakdown-val font-semibold text-emerald-400">{alertCount}</span>
                 </div>
                 <div className="breakdown-row">
                   <span className="breakdown-label">Thời gian còn lại</span>
-                  <span className="breakdown-val font-mono">{timeRemaining(selected?.expected_end_at)}</span>
+                  <span className="breakdown-val font-mono">
+                    {selected?.status === "active" ? timeRemaining(selected?.expected_end_at) : "--:--:--"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1154,23 +1312,38 @@ export default function Missions({ payload }) {
       {/* Bottom Horizontal Timeline Bar */}
       <div className="dashboard-panel timeline-full-panel">
         <div className="panel-section-header">
-          <h3 className="section-title">DÒNG THỜI GIAN</h3>
+          <h3 className="section-title">DÒNG THỜI GIAN {selected ? `· ${selected.name}` : ""}</h3>
+          {alertCount > MAX_ALERTS_SHOWN && (
+            <span className="text-slate-400 text-xs">
+              Hiển thị {MAX_ALERTS_SHOWN}/{alertCount} cảnh báo mới nhất
+            </span>
+          )}
         </div>
 
-        <div className="timeline-horizontal-scroll">
+        <div className="timeline-horizontal-scroll" ref={timelineRef}>
           <div className="timeline-track">
-            {timelineEvents.map((evt, i) => (
-              <div key={i} className="timeline-step-node">
-                <div className={`timeline-dot dot-${evt.color}`} />
-                <div className="timeline-content">
-                  <span className="timeline-time-text">{evt.time}</span>
-                  <span className="timeline-title-text">{evt.title}</span>
-                  <span className="timeline-sub-text">{evt.subtitle}</span>
+            {timeline.length === 0 && <span className="text-slate-400 text-xs">Chưa có sự kiện</span>}
+            {shownTimeline.map((evt, i) => {
+              const Icon = { created: Flag, start: PlaneTakeoff, waypoint: MapPin, alert: AlertTriangle }[evt.type];
+              return (
+                <div key={i} className="timeline-step-node" title={fmtTime(evt.time)}>
+                  <div className={`timeline-dot dot-${EVENT_COLOR[evt.type] || "blue"}`} />
+                  <div className="timeline-content">
+                    <span className="timeline-time-text">{fmtClock(evt.time)}</span>
+                    <span className="timeline-title-text">
+                      {Icon && <Icon size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}
+                      {evt.label}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <button className="timeline-scroll-next" title="Xem tiếp">
+          <button
+            className="timeline-scroll-next"
+            title="Xem tiếp"
+            onClick={() => timelineRef.current?.scrollBy({ left: 300, behavior: "smooth" })}
+          >
             <ChevronRight size={18} />
           </button>
         </div>

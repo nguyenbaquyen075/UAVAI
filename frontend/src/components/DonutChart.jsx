@@ -1,4 +1,4 @@
-export default function DonutChart({ segments, size = 140 }) {
+export default function DonutChart({ segments, size = 140, showLegend = true }) {
   const total = segments.reduce((s, x) => s + x.value, 0) || 1;
   const stroke = 20;
   const r = (size - stroke) / 2;
@@ -27,9 +27,11 @@ export default function DonutChart({ segments, size = 140 }) {
             />
           );
         })}
-        <text x="50%" y="46%" textAnchor="middle" className="donut-total">{total}</text>
-        <text x="50%" y="62%" textAnchor="middle" className="donut-total-label">Tổng số</text>
+        {/* cỡ chữ theo kích thước donut, để donut nhỏ không bị chữ đè lên vành */}
+        <text x="50%" y="50%" textAnchor="middle" className="donut-total" fontSize={size * 0.17} fontWeight="700" fill="#f8fafc">{total}</text>
+        <text x="50%" y="50%" dy={size * 0.13} textAnchor="middle" className="donut-total-label" fontSize={size * 0.085} fill="#94a3b8">Tổng số</text>
       </svg>
+      {showLegend && (
       <ul className="donut-legend">
         {segments.map((s, i) => (
           <li key={i}>
@@ -39,6 +41,7 @@ export default function DonutChart({ segments, size = 140 }) {
           </li>
         ))}
       </ul>
+      )}
     </div>
   );
 }

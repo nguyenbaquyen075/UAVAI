@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from collections import deque
@@ -6,7 +7,7 @@ import cv2
 from ultralytics import YOLO
 
 import db
-from config import CAMERA_FOV_DEG, FOCAL_LENGTH, REFERENCE_SIZES, TARGET_CLASSES
+from config import CAMERA_FOV_DEG, FOCAL_LENGTH, MODEL_PATH, REFERENCE_SIZES, model_class_map
 from settings_store import settings
 from telemetry import estimate_target_position
 
@@ -18,7 +19,7 @@ class LowLatencyVideoStream:
     """Chỉ giữ frame mới nhất, tự reconnect khi mất nguồn (theo Tài liệu 1 mục 3)."""
 
     def __init__(self, source):
-        self.source = source
+        self.source = int(source) if str(source).isdigit() else source  # "0" = webcam
         self.cap = cv2.VideoCapture(source)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self.frame = None
@@ -51,6 +52,7 @@ class LowLatencyVideoStream:
                 sleep_left = frame_interval - (time.time() - t0)
                 if sleep_left > 0:
                     time.sleep(sleep_left)
+        self.cap.release()
 
     def read(self):
         return self.frame, self.frame_timestamp
@@ -59,6 +61,86 @@ class LowLatencyVideoStream:
         self.running = False
         self.thread.join()
         self.cap.release()
+
+
+class FeedPool:
+    """Màn đa khung: mỗi UAV đang được xem có 1 DetectionPipeline riêng (YOLO + tracking + ghi cảnh báo)
+    chạy song song, mở khi có người xem và tự đóng khi bỏ xem. UAV chính (pipeline của /video, /ws)
+    không nằm trong pool."""
+
+    IDLE_CLOSE_S = 20
+    TILE_WIDTH = 640  # thu nhỏ trước khi mã hoá JPEG, đỡ CPU/băng thông khi nhiều khung
+
+    def __init__(self, telemetry=None):
+        self.telemetry = telemetry
+        self.lock = threading.Lock()
+        self.pipelines = {}  # uav_id -> [source, DetectionPipeline, last_access]
+
+    def get(self, uav_id, source):
+        now = time.time()
+        with self.lock:
+            entry = self.pipelines.get(uav_id)
+            if entry and entry[0] != source:  # đổi nguồn video -> mở lại
+                self._close(self.pipelines.pop(uav_id)[1])
+                entry = None
+            if entry is None:
+                p = DetectionPipeline()
+                p.telemetry = self.telemetry
+                p.set_active_uav(uav_id, source)
+                p.start()
+                entry = self.pipelines[uav_id] = [source, p, now]
+            entry[2] = now
+            for k in [k for k, e in self.pipelines.items() if now - e[2] > self.IDLE_CLOSE_S]:
+                self._close(self.pipelines.pop(k)[1])
+            return entry[1]
+
+    def peek(self, uav_id):
+        with self.lock:
+            entry = self.pipelines.get(uav_id)
+            return entry[1] if entry else None
+
+    def close(self, uav_id):
+        with self.lock:
+            entry = self.pipelines.pop(uav_id, None)
+        if entry:
+            self._close(entry[1])
+
+    @staticmethod
+    def _close(p):
+        threading.Thread(target=p.stop, daemon=True).start()  # stop() join thread đọc video, không chặn request
+
+
+SEVERITY_BGR = {"red": (68, 68, 239), "yellow": (11, 158, 245), "green": (128, 222, 74), "none": (128, 222, 74)}
+
+
+def draw_objects(frame, objects, frame_w, frame_h):
+    """Vẽ box YOLO mới nhất lên frame video gốc — video mượt theo tốc độ camera, box cập nhật theo tốc độ nhận diện."""
+    if not objects:
+        return frame
+    frame = frame.copy()
+    h, w = frame.shape[:2]
+    sx, sy = w / (frame_w or w), h / (frame_h or h)
+    for o in objects:
+        x1, y1, x2, y2 = o["bbox"]
+        p1, p2 = (int(x1 * sx), int(y1 * sy)), (int(x2 * sx), int(y2 * sy))
+        color = SEVERITY_BGR.get(o.get("severity"), SEVERITY_BGR["none"])
+        cv2.rectangle(frame, p1, p2, color, 2)
+        dist = f" {o['distance_m']}m" if o.get("distance_m") is not None else ""
+        label = f"#{o['track_id']} {o['class']}{dist}" if o.get("track_id") is not None else f"{o['class']}{dist}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(frame, (p1[0], p1[1] - th - 6), (p1[0] + tw + 6, p1[1]), color, -1)
+        cv2.putText(frame, label, (p1[0] + 3, p1[1] - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (15, 15, 15), 1, cv2.LINE_AA)
+    return frame
+
+
+def encode_tile(frame, width):
+    if frame is None:
+        return None
+    h, w = frame.shape[:2]
+    if w > width:
+        frame = cv2.resize(frame, (width, int(h * width / w)), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    return buf.tobytes() if ok else None
 
 
 def estimate_distance(bbox_height_px, class_name, focal_length=FOCAL_LENGTH):
@@ -82,7 +164,9 @@ class DetectionPipeline:
     """Detection + tracking + distance chạy nền, expose state mới nhất cho FastAPI đọc."""
 
     def __init__(self):
-        self.model = YOLO("yolov8n.pt")
+        # NO_YOLO=1: chạy backend không nhận diện (vẫn có video gốc + dữ liệu), đỡ tốn CPU khi chỉ làm giao diện
+        self.model = None if os.environ.get("NO_YOLO") else YOLO(MODEL_PATH)
+        self.class_map = model_class_map(self.model.names) if self.model else {}
         self.stream = None
         self.active_uav_id = None
         self.lock = threading.Lock()
@@ -100,7 +184,7 @@ class DetectionPipeline:
         self.thread.start()
 
     def set_active_uav(self, uav_id, video_source):
-        """Chỉ 1 UAV chạy detection thật tại 1 thời điểm (ground station CPU-only)."""
+        """Đổi UAV/nguồn video cho pipeline này (mỗi pipeline 1 UAV; nhiều UAV song song xem FeedPool)."""
         old_stream = self.stream
         self.stream = LowLatencyVideoStream(video_source)
         self.active_uav_id = uav_id
@@ -135,6 +219,20 @@ class DetectionPipeline:
 
     def _loop(self):
         while self.running:
+            if self.stream is not None and self.model is None:
+                # Không YOLO: vẫn phát payload tối thiểu để giao diện biết UAV nào đang live + GPS
+                with self.lock:
+                    self.latest_payload = {
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "active_uav_id": self.active_uav_id,
+                        "objects": [],
+                        "uav_status": {
+                            "connection": "ok",
+                            "gps": self.telemetry.position(self.active_uav_id) if self.telemetry else None,
+                        },
+                    }
+                time.sleep(0.2)
+                continue
             if self.stream is None:
                 time.sleep(0.05)
                 continue
@@ -145,7 +243,7 @@ class DetectionPipeline:
                 time.sleep(0.01)
                 continue
 
-            enabled_ids = [cid for cid, name in TARGET_CLASSES.items() if name in cfg["enabled_classes"]]
+            enabled_ids = [cid for cid, name in self.class_map.items() if name in cfg["enabled_classes"]]
             results = self.model.track(
                 frame,
                 persist=True,
@@ -160,7 +258,7 @@ class DetectionPipeline:
             objects = []
             for box in results[0].boxes:
                 cls_id = int(box.cls[0])
-                class_name = TARGET_CLASSES.get(cls_id)
+                class_name = self.class_map.get(cls_id)
                 track_id = int(box.id[0]) if box.id is not None else None
                 x1, y1, x2, y2 = [float(v) for v in box.xyxy[0]]
                 distance = estimate_distance(y2 - y1, class_name)
@@ -230,6 +328,25 @@ class DetectionPipeline:
             return None
         ok, buf = cv2.imencode(".jpg", frame)
         return buf.tobytes() if ok else None
+
+    def get_live_tile(self, width):
+        """Frame mới nhất (đã vẽ box) thu nhỏ cho màn đa khung. Mã hoá JPEG 1 lần cho mỗi frame video +
+        mỗi lượt nhận diện, request lặp lại (khung poll ~25 hình/s) dùng lại bản đã mã hoá -> đỡ CPU."""
+        if self.stream is None:
+            return None
+        frame, frame_ts = self.stream.read()
+        if frame is None:
+            return None
+        payload = self.get_payload() or {}
+        key = (frame_ts, payload.get("timestamp"), len(payload.get("objects") or []), width)
+        cached = getattr(self, "_tile_cache", None)
+        if cached and cached[0] == key:
+            return cached[1]
+        status = payload.get("uav_status") or {}
+        frame = draw_objects(frame, payload.get("objects"), status.get("frame_width"), status.get("frame_height"))
+        jpeg = encode_tile(frame, width)
+        self._tile_cache = (key, jpeg)
+        return jpeg
 
     def get_payload(self):
         with self.lock:

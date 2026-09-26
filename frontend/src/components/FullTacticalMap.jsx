@@ -24,7 +24,7 @@ export default function FullTacticalMap({ onCursorMove, activeLayers }) {
     }).addTo(map);
 
     // Labels overlay
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png", {
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
       maxZoom: 19,
       opacity: 0.6,
     }).addTo(map);

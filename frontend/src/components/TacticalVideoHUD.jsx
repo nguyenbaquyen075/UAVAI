@@ -53,6 +53,7 @@ export default function TacticalVideoHUD({
   const [feedSrc, setFeedSrc] = useState(`${API_BASE}/video`);
   const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
   const containerRef = useRef(null);
+  const imgRef = useRef(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -97,6 +98,7 @@ export default function TacticalVideoHUD({
     >
       {/* Background Aerial Stream / Feed Image */}
       <img
+        ref={imgRef}
         className="tactical-video-feed"
         src={feedSrc}
         onError={() => setFeedSrc("/uav_aerial_feed.png")}
@@ -151,7 +153,14 @@ export default function TacticalVideoHUD({
       {/* KHUNG BÁM MỤC TIÊU THẬT — toạ độ quy đổi từ bbox YOLO (pixel gốc) sang vị trí hiển thị,
           bù đúng phần crop của object-fit:cover nên bám khớp mục tiêu trên video */}
       {objects.slice(0, 8).map((o) => {
-        const box = bboxToBoxPx(o.bbox, frameSize?.width, frameSize?.height, boxSize.w, boxSize.h);
+        // Trang nào không truyền frameSize thì lấy kích thước thật của frame video
+        const box = bboxToBoxPx(
+          o.bbox,
+          frameSize?.width || imgRef.current?.naturalWidth,
+          frameSize?.height || imgRef.current?.naturalHeight,
+          boxSize.w,
+          boxSize.h
+        );
         if (!box) return null;
         const color = SEVERITY_COLOR[o.severity] || "#4ade80";
         return (

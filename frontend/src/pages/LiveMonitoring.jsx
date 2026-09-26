@@ -20,10 +20,34 @@ import LiveTacticalMap from "../components/LiveTacticalMap";
 import ThermalSensorView from "../components/ThermalSensorView";
 import PTZCameraControls from "../components/PTZCameraControls";
 import SignalBitrateCharts from "../components/SignalBitrateCharts";
+import MultiMonitor from "./MultiMonitor";
 
 export default function LiveMonitoring({ payload }) {
   const [selectedUavId, setSelectedUavId] = useState(2);
   const [cameraMode, setCameraMode] = useState("EO");
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem("live_view") || "grid";
+    } catch {
+      return "grid";
+    }
+  });
+  const switchView = (v) => {
+    setView(v);
+    try {
+      localStorage.setItem("live_view", v);
+    } catch {}
+  };
+  const viewSwitch = (
+    <div className="live-view-switch">
+      <button className={view === "grid" ? "active" : ""} onClick={() => switchView("grid")}>
+        4 khung
+      </button>
+      <button className={view === "single" ? "active" : ""} onClick={() => switchView("single")}>
+        1 khung
+      </button>
+    </div>
+  );
   const gps = payload?.uav_status?.gps;
 
   return (
@@ -121,14 +145,24 @@ export default function LiveMonitoring({ payload }) {
 
       {/* Middle Split Section: Tactical Video HUD + Right Stack */}
       <div className="middle-dashboard-split-v2">
-        <div className="main-video-hud-box">
-          <TacticalVideoHUD
-            isLive={true}
-            telemetry={gps}
-            objects={payload?.objects ?? []}
-            frameSize={{ width: payload?.uav_status?.frame_width, height: payload?.uav_status?.frame_height }}
-          />
-        </div>
+        {view === "grid" ? (
+          <MultiMonitor embedded extraActions={viewSwitch} />
+        ) : (
+          <div className="live-single-wrap">
+            <div className="mm-toolbar">
+              <span className="mm-count">UAV đang giám sát chính</span>
+              {viewSwitch}
+            </div>
+            <div className="main-video-hud-box">
+              <TacticalVideoHUD
+                isLive={true}
+                telemetry={gps}
+                objects={payload?.objects ?? []}
+                frameSize={{ width: payload?.uav_status?.frame_width, height: payload?.uav_status?.frame_height }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="right-tactical-column-v2">
           {/* Top Card: VỊ TRÍ UAV (Mini Tactical Map) */}

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
 import db
-from pipeline import DetectionPipeline
+from pipeline import DetectionPipeline, FeedPool
 from settings_store import settings
 from telemetry import TelemetryHub
 
@@ -20,6 +20,7 @@ app.add_middleware(
 pipeline = DetectionPipeline()
 telemetry = TelemetryHub(get_uav_ids=lambda: [u["id"] for u in db.list_uavs()])
 pipeline.telemetry = telemetry
+feeds = FeedPool(telemetry)
 
 
 # ponytail: dữ liệu demo để giao diện có nội dung ngay lần chạy đầu (chỉ chèn khi DB rỗng).
@@ -66,6 +67,8 @@ def startup():
 @app.on_event("shutdown")
 def shutdown():
     pipeline.stop()
+    for uav_id in list(feeds.pipelines):
+        feeds.close(uav_id)
 
 
 async def _mjpeg_frames():
@@ -81,6 +84,35 @@ async def video():
     return StreamingResponse(
         _mjpeg_frames(), media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+
+def _pipeline_for(uav_id):
+    """Pipeline nhận diện của UAV: UAV chính dùng pipeline gốc, UAV khác lấy/mở trong pool."""
+    if uav_id == pipeline.active_uav_id:
+        return pipeline
+    uav = next((u for u in db.list_uavs() if u["id"] == uav_id), None)
+    if uav is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy UAV")
+    if not uav["video_source"]:
+        raise HTTPException(status_code=404, detail="UAV chưa có nguồn video")
+    return feeds.get(uav_id, uav["video_source"])
+
+
+@app.get("/api/uavs/{uav_id}/frame")
+def uav_frame(uav_id: int):
+    """1 frame JPEG mới nhất (đã vẽ box YOLO) — màn đa khung poll liên tục thay vì giữ MJPEG,
+    vì trình duyệt chỉ mở ~6 kết nối/host: nhiều MJPEG sẽ làm treo các request API khác."""
+    jpeg = _pipeline_for(uav_id).get_live_tile(FeedPool.TILE_WIDTH)
+    if jpeg is None:
+        raise HTTPException(status_code=503, detail="Chưa có tín hiệu video")
+    return Response(content=jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/uavs/{uav_id}/detections")
+def uav_detections(uav_id: int):
+    p = pipeline if uav_id == pipeline.active_uav_id else feeds.peek(uav_id)
+    payload = (p.get_payload() if p else None) or {}
+    return {"timestamp": payload.get("timestamp"), "objects": payload.get("objects", []), "ai": pipeline.model is not None}
 
 
 @app.get("/api/snapshot")
@@ -179,6 +211,8 @@ def patch_uav(uav_id: int, body: dict):
         elif uav["status"] == "flying":
             body = {**body, "flying_since": None}
     db.update_uav(uav_id, body)
+    if uav_id == pipeline.active_uav_id and body.get("video_source") not in (None, uav["video_source"]):
+        pipeline.set_active_uav(uav_id, body["video_source"])
     return {"ok": True}
 
 
@@ -198,6 +232,7 @@ def activate_uav(uav_id: int):
     if pipeline.active_uav_id is not None and pipeline.active_uav_id in uavs:
         db.update_uav(pipeline.active_uav_id, {"status": "ready", "flying_since": None})
     db.update_uav(uav_id, {"status": "flying", "flying_since": _now_iso()})
+    feeds.close(uav_id)  # tránh 2 pipeline cùng nhận diện 1 UAV (ghi trùng cảnh báo)
     pipeline.set_active_uav(uav_id, uavs[uav_id]["video_source"])
     return {"active_uav_id": uav_id}
 

@@ -525,6 +525,8 @@ export default function Targets({ payload }) {
           </div>
           <div className="donut-chart-flex">
             <DonutChart
+              showLegend={false}
+              size={88}
               segments={[
                 { label: "Phương tiện", value: 10, color: "#ef4444" },
                 { label: "Con người", value: 7, color: "#f97316" },
@@ -535,10 +537,10 @@ export default function Targets({ payload }) {
               centerSubtext="Tổng số"
             />
             <div className="donut-legend-list">
-              <div className="leg-item"><span className="sq sq-red" /><span>Phương tiện</span><span className="leg-val">10 (41.7%)</span></div>
-              <div className="leg-item"><span className="sq sq-orange" /><span>Con người</span><span className="leg-val">7 (29.2%)</span></div>
-              <div className="leg-item"><span className="sq sq-blue" /><span>Vật thể</span><span className="leg-val">4 (16.7%)</span></div>
-              <div className="leg-item"><span className="sq sq-purple" /><span>Khác</span><span className="leg-val">3 (12.4%)</span></div>
+              <div className="leg-item"><span className="sq sq-red" /><span>Phương tiện</span><span className="leg-val">10 (42%)</span></div>
+              <div className="leg-item"><span className="sq sq-orange" /><span>Con người</span><span className="leg-val">7 (29%)</span></div>
+              <div className="leg-item"><span className="sq sq-blue" /><span>Vật thể</span><span className="leg-val">4 (17%)</span></div>
+              <div className="leg-item"><span className="sq sq-purple" /><span>Khác</span><span className="leg-val">3 (12%)</span></div>
             </div>
           </div>
         </div>
@@ -550,6 +552,8 @@ export default function Targets({ payload }) {
           </div>
           <div className="donut-chart-flex">
             <DonutChart
+              showLegend={false}
+              size={88}
               segments={[
                 { label: "Cao", value: 6, color: "#ef4444" },
                 { label: "Trung bình", value: 11, color: "#f59e0b" },
@@ -560,8 +564,8 @@ export default function Targets({ payload }) {
             />
             <div className="donut-legend-list">
               <div className="leg-item"><span className="sq sq-red" /><span>Cao</span><span className="leg-val">6 (25%)</span></div>
-              <div className="leg-item"><span className="sq sq-orange" /><span>Trung bình</span><span className="leg-val">11 (45.8%)</span></div>
-              <div className="leg-item"><span className="sq sq-blue" /><span>Thấp</span><span className="leg-val">7 (29.2%)</span></div>
+              <div className="leg-item"><span className="sq sq-orange" /><span>Trung bình</span><span className="leg-val">11 (46%)</span></div>
+              <div className="leg-item"><span className="sq sq-blue" /><span>Thấp</span><span className="leg-val">7 (29%)</span></div>
             </div>
           </div>
         </div>

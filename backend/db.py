@@ -222,11 +222,13 @@ def create_mission(name, uav_id, waypoints, started_at, expected_end_at, descrip
     return mission_id
 
 
-MISSION_EDITABLE_FIELDS = ("name", "description", "status", "priority", "notes", "frozen_pct")
+MISSION_EDITABLE_FIELDS = ("name", "description", "status", "priority", "notes", "frozen_pct", "uav_id", "expected_end_at", "waypoints")
 
 
 def update_mission(mission_id, patch):
     fields = {k: v for k, v in patch.items() if k in MISSION_EDITABLE_FIELDS}
+    if "waypoints" in fields:
+        fields["waypoints"] = json.dumps(fields["waypoints"])
     if not fields:
         return
     conn = sqlite3.connect(DB_PATH)

@@ -85,10 +85,10 @@ export default function LiveTacticalMap({
 
     // Dark tiles map layer
     L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
       {
         maxZoom: 19,
-        subdomains: "abcd",
+        maxNativeZoom: 16,
       }
     ).addTo(map);
 

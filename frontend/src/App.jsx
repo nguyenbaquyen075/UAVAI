@@ -23,12 +23,14 @@ import {
   TrendingUp,
   FileText,
   BarChart2,
+  Grid2x2,
 } from "lucide-react";
 import { useDetectionSocket } from "./hooks/useDetectionSocket";
 import Overview from "./pages/Overview";
 import UAVList from "./pages/UAVList";
 import Missions from "./pages/Missions";
 import LiveMonitoring from "./pages/LiveMonitoring";
+import MultiMonitor from "./pages/MultiMonitor";
 import Targets from "./pages/Targets";
 import SettingsPage from "./pages/Settings";
 import MapView from "./pages/MapView";
@@ -44,6 +46,7 @@ const TABS = [
   { key: "missions", label: "Nhiệm vụ", Icon: ClipboardList },
   { key: "tracking", label: "Mục tiêu", Icon: Target },
   { key: "live", label: "Theo dõi trực tiếp", Icon: Video },
+  { key: "multi", label: "Đa màn hình", Icon: Grid2x2 },
   { key: "map", label: "Bản đồ", Icon: Map },
   { key: "analytics", label: "Phân tích", Icon: TrendingUp },
   { key: "notes", label: "Ghi chép", Icon: FileText },
@@ -162,6 +165,8 @@ export default function App() {
                   ? "THEO DÕI MỤC TIÊU"
                   : tab === "live"
                   ? "THEO DÕI TRỰC TIẾP"
+                  : tab === "multi"
+                  ? "GIÁM SÁT ĐA UAV"
                   : tab === "analytics"
                   ? "PHÂN TÍCH"
                   : tab === "notes"
@@ -216,9 +221,10 @@ export default function App() {
           <ErrorBoundary key={tab}>
             {tab === "overview" && <Overview payload={payload} onNavigateTab={setTab} />}
             {tab === "uavs" && <UAVList activeUavId={payload?.active_uav_id} payload={payload} onOpenAlerts={() => setTab("logs")} />}
-            {tab === "missions" && <Missions payload={payload} />}
+            {tab === "missions" && <Missions payload={payload} onNavigateTab={setTab} />}
             {tab === "tracking" && <Targets payload={payload} />}
             {tab === "live" && <LiveMonitoring payload={payload} />}
+            {tab === "multi" && <MultiMonitor />}
             {tab === "map" && <MapView payload={payload} />}
             {tab === "analytics" && <Analytics payload={payload} />}
             {tab === "notes" && <NotesView />}

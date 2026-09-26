@@ -18,6 +18,8 @@ DEFAULTS = {
     "time_format": "24h",
     "distance_unit": "m",
     "speed_unit": "km/h",
+    # Màn đa khung: [{"id", "uav_id", "label"}]; None = chưa cấu hình (giao diện tự tạo 4 khung đầu)
+    "monitor_tiles": None,
 }
 
 

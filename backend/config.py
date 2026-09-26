@@ -1,10 +1,38 @@
-TARGET_CLASSES = {
-    0: "person",
-    2: "car",
-    3: "motorcycle",
-    5: "bus",
-    7: "truck",
+import os
+from pathlib import Path
+
+# Tên class của model -> 5 loại mục tiêu của hệ thống. Model COCO (yolov8n.pt) và model train trên
+# VisDrone (10 class góc nhìn drone) đều quy về cùng 5 loại, nên giao diện/cảnh báo/thống kê/DB
+# không phải đổi gì khi thay model. Class không có ở đây (vd COCO "dog") bị bỏ qua.
+CLASS_ALIASES = {
+    # COCO
+    "person": "person",
+    "car": "car",
+    "motorcycle": "motorcycle",
+    "bus": "bus",
+    "truck": "truck",
+    # VisDrone
+    "pedestrian": "person",
+    "people": "person",
+    "van": "car",
+    "motor": "motorcycle",
+    # ponytail: xe ba bánh gộp vào "motorcycle" (hiển thị "Xe máy") để giữ nguyên 5 loại. Xe đạp cố ý
+    # không map (COCO cũng có "bicycle" — map sẽ đổi hành vi model cũ); thêm loại riêng khi cần.
+    "tricycle": "motorcycle",
+    "awning-tricycle": "motorcycle",
 }
+
+
+def model_class_map(model_names):
+    """{class_id của model: tên loại hệ thống} từ model.names."""
+    return {int(i): CLASS_ALIASES[n] for i, n in model_names.items() if n in CLASS_ALIASES}
+
+
+# Model dùng để nhận diện: YOLO_MODEL=... nếu đặt, không thì ưu tiên model đã train trên VisDrone
+# (training/README.md), cuối cùng mới về model COCO gốc.
+_HERE = Path(__file__).parent
+_VISDRONE_MODEL = _HERE / "models" / "visdrone_best.pt"
+MODEL_PATH = os.environ.get("YOLO_MODEL") or (str(_VISDRONE_MODEL) if _VISDRONE_MODEL.exists() else "yolov8n.pt")
 
 REFERENCE_SIZES = {
     "person": 1.7,

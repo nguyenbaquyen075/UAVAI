@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   Maximize2,
   Plus,
@@ -15,13 +18,44 @@ import {
   Plane,
 } from "lucide-react";
 
+const MAP_CENTER = [21.0285, 105.8542];
+const USER_POS = [21.0075, 105.8003];
+
+const ESRI = (name) => `https://server.arcgisonline.com/ArcGIS/rest/services/${name}/MapServer/tile/{z}/{y}/{x}`;
+
+// Nguồn tile miễn phí, không cần API key (CARTO đã yêu cầu key)
+const TILE_LAYERS = {
+  default: [[ESRI("Canvas/World_Dark_Gray_Base"), { maxZoom: 16, attribution: "© Esri" }]],
+  satellite: [
+    [ESRI("World_Imagery"), { attribution: "© Esri" }],
+    [ESRI("Reference/World_Boundaries_and_Places"), {}],
+  ],
+  terrain: [[ESRI("World_Topo_Map"), { attribution: "© Esri" }]],
+  street: [[ESRI("World_Street_Map"), { attribution: "© Esri" }]],
+};
+
+// Ảnh minh hoạ cho thẻ loại bản đồ: 1 tile zoom 12 quanh tâm Hà Nội
+const thumbStyle = (type) => ({
+  backgroundImage: `url(${TILE_LAYERS[type][0][0].replace("{s}", "a").replace("{z}", 12).replace("{x}", 3252).replace("{y}", 1803)})`,
+  backgroundSize: "cover",
+  backgroundPosition: "center",
+});
+
+const iconFrom = (element, className, size, innerClass = "") =>
+  L.divIcon({
+    className,
+    html: `<div class="${innerClass}">${renderToStaticMarkup(element)}</div>`,
+    iconSize: size,
+    iconAnchor: [size[0] / 2, size[1] / 2],
+  });
+
 const INITIAL_UAVS = [
-  { id: "UAV-01", name: "UAV-01 - Eagle Pro", status: "active", label: "Đang hoạt động", color: "#22c55e" },
-  { id: "UAV-02", name: "UAV-02 - Falcon 8X", status: "pending", label: "Chờ nhiệm vụ", color: "#eab308" },
-  { id: "UAV-03", name: "UAV-03 - SkyEye 4K", status: "active", label: "Đang hoạt động", color: "#22c55e" },
-  { id: "UAV-04", name: "UAV-04 - Phantom 4 RTK", status: "maintenance", label: "Bảo trì", color: "#a855f7" },
-  { id: "UAV-05", name: "UAV-05 - Matrice 300", status: "unavailable", label: "Không khả dụng", color: "#ef4444" },
-  { id: "UAV-06", name: "UAV-06 - Inspire 3", status: "active", label: "Đang hoạt động", color: "#22c55e" },
+  { id: "UAV-01", name: "UAV-01 - Eagle Pro", status: "active", label: "Đang hoạt động", color: "#22c55e", pos: [21.0482, 105.8012] },
+  { id: "UAV-02", name: "UAV-02 - Falcon 8X", status: "pending", label: "Chờ nhiệm vụ", color: "#eab308", pos: [21.0005, 105.8621] },
+  { id: "UAV-03", name: "UAV-03 - SkyEye 4K", status: "active", label: "Đang hoạt động", color: "#22c55e", pos: [21.0451, 105.8905] },
+  { id: "UAV-04", name: "UAV-04 - Phantom 4 RTK", status: "maintenance", label: "Bảo trì", color: "#a855f7", pos: [20.9902, 105.7803] },
+  { id: "UAV-05", name: "UAV-05 - Matrice 300", status: "unavailable", label: "Không khả dụng", color: "#ef4444", pos: [20.9851, 105.8402] },
+  { id: "UAV-06", name: "UAV-06 - Inspire 3", status: "active", label: "Đang hoạt động", color: "#22c55e", pos: MAP_CENTER },
 ];
 
 export default function MapSettingsView() {
@@ -32,9 +66,13 @@ export default function MapSettingsView() {
   const [displayRange, setDisplayRange] = useState("all");
   const [uavFilter, setUavFilter] = useState("all");
   const [copiedCoords, setCopiedCoords] = useState(false);
+  const [center, setCenter] = useState(MAP_CENTER);
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markersRef = useRef(null);
 
   const handleCopyCoordinates = () => {
-    navigator.clipboard.writeText("21.0285° N, 105.8542° E");
+    navigator.clipboard.writeText(`${center[0].toFixed(4)}° N, ${center[1].toFixed(4)}° E`);
     setCopiedCoords(true);
     setTimeout(() => setCopiedCoords(false), 2000);
   };
@@ -46,6 +84,58 @@ export default function MapSettingsView() {
     if (uavFilter === "unavailable") return uav.status === "unavailable";
     return true;
   });
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+    const map = L.map(containerRef.current, { zoomControl: false }).setView(MAP_CENTER, 13);
+    mapRef.current = map;
+
+    // Vòng radar 2–10 km quanh tâm
+    [2, 4, 6, 8, 10].forEach((km) =>
+      L.circle(MAP_CENTER, {
+        radius: km * 1000,
+        color: "#22c55e",
+        weight: km === 10 ? 1.5 : 1,
+        dashArray: km === 10 ? null : "4 6",
+        fill: false,
+        interactive: false,
+      }).addTo(map)
+    );
+
+    L.marker(USER_POS, { icon: iconFrom(<MapPin size={22} color="#3b82f6" fill="#3b82f6" />, "map-user-pin-icon", [22, 22]) })
+      .bindTooltip("Vị trí của bạn (Trung Hòa)")
+      .addTo(map);
+
+    markersRef.current = L.layerGroup().addTo(map);
+    map.on("moveend", () => {
+      const c = map.getCenter();
+      setCenter([c.lat, c.lng]);
+    });
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const layers = TILE_LAYERS[selectedMapType].map(([url, opts]) => L.tileLayer(url, { maxZoom: 19, ...opts }).addTo(map));
+    return () => layers.forEach((l) => l.remove());
+  }, [selectedMapType]);
+
+  useEffect(() => {
+    const group = markersRef.current;
+    if (!group) return;
+    group.clearLayers();
+    filteredUAVs.forEach((uav) => {
+      const Icon = uav.status === "unavailable" ? XCircle : Plane;
+      L.marker(uav.pos, { icon: iconFrom(<Icon size={16} color={uav.color} />, "", [32, 32], "map-uav-marker") })
+        .bindTooltip(`${uav.name} — ${uav.label}`)
+        .addTo(group);
+    });
+  }, [uavFilter]);
 
   return (
     <div className="map-settings-layout font-sans">
@@ -86,7 +176,7 @@ export default function MapSettingsView() {
               className={`map-type-card ${selectedMapType === "default" ? "selected" : ""}`}
               onClick={() => setSelectedMapType("default")}
             >
-              <div className="map-thumb thumb-default" />
+              <div className="map-thumb thumb-default" style={thumbStyle("default")} />
               <span className="thumb-title">Bản đồ mặc định</span>
               {selectedMapType === "default" && (
                 <div className="thumb-badge">
@@ -100,7 +190,7 @@ export default function MapSettingsView() {
               className={`map-type-card ${selectedMapType === "satellite" ? "selected" : ""}`}
               onClick={() => setSelectedMapType("satellite")}
             >
-              <div className="map-thumb thumb-satellite" />
+              <div className="map-thumb thumb-satellite" style={thumbStyle("satellite")} />
               <span className="thumb-title">Vệ tinh</span>
               {selectedMapType === "satellite" && (
                 <div className="thumb-badge">
@@ -114,7 +204,7 @@ export default function MapSettingsView() {
               className={`map-type-card ${selectedMapType === "terrain" ? "selected" : ""}`}
               onClick={() => setSelectedMapType("terrain")}
             >
-              <div className="map-thumb thumb-terrain" />
+              <div className="map-thumb thumb-terrain" style={thumbStyle("terrain")} />
               <span className="thumb-title">Địa hình</span>
               {selectedMapType === "terrain" && (
                 <div className="thumb-badge">
@@ -128,7 +218,7 @@ export default function MapSettingsView() {
               className={`map-type-card ${selectedMapType === "street" ? "selected" : ""}`}
               onClick={() => setSelectedMapType("street")}
             >
-              <div className="map-thumb thumb-street" />
+              <div className="map-thumb thumb-street" style={thumbStyle("street")} />
               <span className="thumb-title">Đường phố</span>
               {selectedMapType === "street" && (
                 <div className="thumb-badge">
@@ -197,85 +287,13 @@ export default function MapSettingsView() {
       <div className="map-main-split-container">
         {/* TACTICAL MAP VIEWPORT */}
         <div className="tactical-map-viewport">
-          {/* MAP CANVAS / SVG GRID */}
-          <div className={`tactical-map-bg map-type-${selectedMapType}`}>
-            {/* RADAR CONCENTRIC RINGS */}
-            <svg className="radar-svg-overlay" viewBox="0 0 1000 700">
-              <g transform="translate(500, 350)">
-                <circle r="60" className="radar-ring" />
-                <text x="65" y="4" className="ring-label">2 km</text>
-
-                <circle r="120" className="radar-ring" />
-                <text x="125" y="4" className="ring-label">4 km</text>
-
-                <circle r="180" className="radar-ring" />
-                <text x="185" y="4" className="ring-label">6 km</text>
-
-                <circle r="240" className="radar-ring" />
-                <text x="245" y="4" className="ring-label">8 km</text>
-
-                <circle r="300" className="radar-ring main-ring" />
-                <text x="305" y="4" className="ring-label main-label">10 km</text>
-                <text x="305" y="18" className="ring-label-val green">10.0 km</text>
-
-                <line x1="-320" y1="0" x2="320" y2="0" className="axis-line" />
-                <line x1="0" y1="-320" x2="0" y2="320" className="axis-line" />
-
-                <circle r="18" className="center-uav-bg" />
-                <circle r="8" className="center-uav-core" />
-              </g>
-            </svg>
-
-            {/* LOCATION LABELS OVERLAY (EXACT MATCH SCREENSHOT) */}
-            <div className="map-location-tag loc-cau-giay">Cầu Giấy</div>
-            <div className="map-location-tag loc-phu-dien">Phú Diễn</div>
-            <div className="map-location-tag loc-gia-thuy">Gia Thụy</div>
-            <div className="map-location-tag loc-long-bien">Long Biên</div>
-            <div className="map-location-tag loc-yen-hoa">Yên Hòa</div>
-            <div className="map-location-tag loc-trung-hoa">Trung Hòa</div>
-            <div className="map-location-tag loc-nhan-chinh">Nhân Chính</div>
-            <div className="map-location-tag loc-dong-da">Đống Đa</div>
-            <div className="map-location-tag loc-hoang-mai">Hoàng Mai</div>
-
-            {/* HIGHWAY BADGES */}
-            <div className="highway-badge hw-ql32">QL32</div>
-            <div className="highway-badge hw-qh03">QH03</div>
-            <div className="highway-badge hw-ct20">CT20</div>
-            <div className="highway-badge hw-ah14">AH14</div>
-
-            {/* BLUE USER POSITION PIN */}
-            <div className="map-user-pin" title="Vị trí của bạn (Trung Hòa)">
-              <div className="pin-icon-wrap">
-                <MapPin size={22} color="#3b82f6" fill="#3b82f6" />
-              </div>
-            </div>
-
-            {/* DRONE MARKERS SCATTERED ON MAP */}
-            <div className="map-uav-marker pos-1" title="UAV-01 - Active">
-              <Plane size={16} color="#22c55e" />
-            </div>
-            <div className="map-uav-marker pos-2" title="UAV-02 - Pending">
-              <Plane size={16} color="#eab308" />
-            </div>
-            <div className="map-uav-marker pos-3" title="UAV-03 - Active">
-              <Plane size={16} color="#22c55e" />
-            </div>
-            <div className="map-uav-marker pos-4" title="UAV-04 - Maintenance">
-              <Plane size={16} color="#a855f7" />
-            </div>
-            <div className="map-uav-marker pos-5" title="UAV-05 - Unavailable">
-              <XCircle size={16} color="#ef4444" />
-            </div>
-            <div className="map-uav-marker pos-center" title="UAV Central Control Base">
-              <Plane size={20} color="#22c55e" />
-            </div>
-          </div>
+          <div ref={containerRef} className="tactical-map-bg" />
 
           {/* TOP LEFT MAP CONTROLS OVERLAY */}
           <div className="map-tools-overlay">
-            <button className="tool-btn" title="Phóng to"><Plus size={16} /></button>
-            <button className="tool-btn" title="Thu nhỏ"><Minus size={16} /></button>
-            <button className="tool-btn" title="Căn tâm vị trí"><Crosshair size={16} /></button>
+            <button className="tool-btn" title="Phóng to" onClick={() => mapRef.current?.zoomIn()}><Plus size={16} /></button>
+            <button className="tool-btn" title="Thu nhỏ" onClick={() => mapRef.current?.zoomOut()}><Minus size={16} /></button>
+            <button className="tool-btn" title="Căn tâm vị trí" onClick={() => mapRef.current?.setView(MAP_CENTER, 13)}><Crosshair size={16} /></button>
             <button className="tool-btn" title="Lớp phủ bản đồ"><Layers size={16} /></button>
           </div>
 
@@ -415,11 +433,11 @@ export default function MapSettingsView() {
             <div className="coords-display-row font-mono">
               <div className="coord-block">
                 <span className="k">Vĩ độ</span>
-                <span className="v">21.0285° N</span>
+                <span className="v">{center[0].toFixed(4)}° N</span>
               </div>
               <div className="coord-block">
                 <span className="k">Kinh độ</span>
-                <span className="v">105.8542° E</span>
+                <span className="v">{center[1].toFixed(4)}° E</span>
               </div>
               <button
                 className="btn-copy-coords"
