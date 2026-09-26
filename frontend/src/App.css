@@ -20002,3 +20002,11 @@ td.zone-cell,
   .ap-next-track span, .ap-event, .ap-threat { animation: none !important; }
   .apd-body, .ap-batt-fill, .ap-next-track span { transition: none !important; }
 }
+.ap-seg.three { grid-template-columns: repeat(3, 1fr); }
+.ap-inline { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #94a3b8; }
+.ap-inline span { display: flex; align-items: center; gap: 10px; }
+.ap-inline input[type="range"] { flex: 1; accent-color: #22d3ee; min-width: 0; }
+.ap-inline b { font-family: 'JetBrains Mono', monospace; color: #e2e8f0; font-size: 12px; width: 48px; text-align: right; white-space: nowrap; }
+.ap-warn { margin: 0; font-size: 11px; line-height: 1.5; color: #fcd34d; background: rgba(120, 53, 15, 0.35); border: 1px solid #92400e; border-radius: 6px; padding: 7px 9px; }
+.ap-warn { display: flex; flex-direction: column; gap: 2px; }
+.ap-warn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

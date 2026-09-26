@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 import auth
 import autopilot as ap_mod
+import coverage
 import db
 from pipeline import DetectionPipeline, FeedPool
 from settings_store import settings
@@ -341,10 +342,10 @@ MAX_ROUTE_POINTS = 100
 MAX_ROUTE_FROM_BASE_M = 20_000  # đường vẽ tay không được xa căn cứ quá 20 km (tầm liên lạc)
 
 
-def _parse_route(raw):
-    """Đường vẽ tay từ giao diện: kiểm tra kiểu/số lượng/phạm vi toạ độ trước khi cho UAV bay."""
-    if not isinstance(raw, list) or not 2 <= len(raw) <= MAX_ROUTE_POINTS:
-        raise HTTPException(status_code=400, detail=f"Đường bay cần từ 2 đến {MAX_ROUTE_POINTS} điểm")
+def _parse_route(raw, min_points=2, max_points=MAX_ROUTE_POINTS, what="Đường bay"):
+    """Toạ độ vẽ tay từ giao diện: kiểm tra kiểu/số lượng/phạm vi trước khi cho UAV bay."""
+    if not isinstance(raw, list) or not min_points <= len(raw) <= max_points:
+        raise HTTPException(status_code=400, detail=f"{what} cần từ {min_points} đến {max_points} điểm")
     route = []
     for p in raw:
         try:
@@ -359,28 +360,67 @@ def _parse_route(raw):
     return route
 
 
+SWEEP_SPACING_M = (20, 500)
+MAX_SWEEP_AREA_M2 = 25_000_000  # 25 km²
+MAX_SWEEP_POINTS = 600
+
+
+def _plan_sweep(body):
+    """Vùng vẽ tay + khoảng cách quét -> đường bay quét đan chéo (xem coverage.py)."""
+    area = _parse_route(body.get("area"), min_points=3, max_points=50, what="Vùng quét")
+    try:
+        spacing = float(body.get("spacing_m", 80))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Khoảng cách quét không hợp lệ")
+    lo, hi = SWEEP_SPACING_M
+    if not lo <= spacing <= hi:
+        raise HTTPException(status_code=400, detail=f"Khoảng cách quét phải từ {lo} đến {hi} m")
+    try:
+        route, stats = coverage.plan_crisscross(area, spacing)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if stats["area_m2"] > MAX_SWEEP_AREA_M2:
+        raise HTTPException(status_code=400, detail=f"Vùng rộng {stats['area_m2'] / 1e6:.1f} km² — tối đa {MAX_SWEEP_AREA_M2 / 1e6:.0f} km² cho 1 UAV")
+    if len(route) > MAX_SWEEP_POINTS:
+        raise HTTPException(status_code=400, detail="Vùng quá lớn so với khoảng cách quét — tăng khoảng cách hoặc chia nhỏ vùng")
+    return route, stats
+
+
+@app.post("/api/autopilot/plan-sweep")
+def autopilot_plan_sweep(body: dict):
+    """Xem trước đường quét đan chéo trước khi cho bay."""
+    route, stats = _plan_sweep(body)
+    return {"route": [{"lat": a, "lon": b} for a, b in route], **stats}
+
+
 @app.post("/api/autopilot/{uav_id}/start")
 def autopilot_start(uav_id: int, body: dict):
-    """Bật tự lái (hoặc đổi đường khi đang tự lái). Lộ trình: body.route (vẽ tay) hoặc body.mission_id."""
+    """Bật tự lái (hoặc đổi đường khi đang tự lái).
+    Lộ trình: body.sweep {area, spacing_m} (quét vùng đan chéo) | body.route (vẽ tay) | body.mission_id."""
     uav = next((u for u in db.list_uavs() if u["id"] == uav_id), None)
     if uav is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy UAV")
     if uav["status"] in ("maintenance", "offline"):
         raise HTTPException(status_code=400, detail="UAV đang bảo trì/offline, không thể tự lái")
     mission_id = None
-    if body.get("route") is not None:
+    if body.get("sweep") is not None:
+        route, _ = _plan_sweep(body["sweep"] if isinstance(body["sweep"], dict) else {})
+        kind = "sweep"
+    elif body.get("route") is not None:
         route = _parse_route(body["route"])
+        kind = "draw"
     else:
         mission = next((m for m in db.list_missions() if m["id"] == body.get("mission_id")), None)
         if mission is None:
             raise HTTPException(status_code=400, detail="Vẽ đường bay hoặc chọn nhiệm vụ có lộ trình")
         route = [(w["lat"], w["lon"]) for w in mission["waypoints"]]
         mission_id = mission["id"]
+        kind = "mission"
     current = telemetry.position(uav_id)
     try:
         autopilot.start(uav_id, route, (current["lat"], current["lon"]), current["battery_pct"], mission_id,
                         float(body.get("altitude_m") or ap_mod.PATROL_ALT_M), body.get("speed_kmh"),
-                        body.get("on_finish", "loop"))
+                        body.get("on_finish", "loop"), kind)
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     # AI phải canh camera của UAV này suốt thời gian tự lái

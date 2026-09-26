@@ -518,3 +518,4 @@ export const autopilotStart = (uavId, opts) => postJson(`/api/autopilot/${uavId}
 export const autopilotCommand = (uavId, action) => postJson(`/api/autopilot/${uavId}/command`, { action });
 export const autopilotStop = (uavId) => postJson(`/api/autopilot/${uavId}/stop`);
 export const autopilotSimulateThreat = (uavId) => postJson(`/api/autopilot/${uavId}/simulate-threat`);
+export const autopilotPlanSweep = (area, spacingM) => postJson("/api/autopilot/plan-sweep", { area, spacing_m: spacingM });

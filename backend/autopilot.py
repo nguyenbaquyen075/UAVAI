@@ -61,8 +61,9 @@ def _offset(p, dx_m, dy_m):
 
 class UavAutopilot:
     def __init__(self, uav_id, route, start, battery, mission_id=None, altitude_m=PATROL_ALT_M, speed_mps=CRUISE_MPS,
-                 on_finish="loop", start_alt=0.0):
+                 on_finish="loop", start_alt=0.0, route_kind="draw"):
         self.uav_id = uav_id
+        self.route_kind = route_kind  # "draw" vẽ tay | "sweep" quét vùng đan chéo | "mission" theo nhiệm vụ
         self.on_finish = on_finish  # "loop": lặp lại lộ trình | "rtb": bay hết 1 lượt rồi về căn cứ
         self.route = [tuple(p) for p in route]
         self.mission_id = mission_id
@@ -236,6 +237,7 @@ class UavAutopilot:
             "uav_id": self.uav_id,
             "mission_id": self.mission_id,
             "on_finish": self.on_finish,
+            "route_kind": self.route_kind,
             "mode": self.mode,
             "mode_label": MODE_LABEL[self.mode],
             "waypoint_index": self.wp,
@@ -265,7 +267,8 @@ class Autopilot:
         self.running = True
         threading.Thread(target=self._loop, daemon=True).start()
 
-    def start(self, uav_id, route, start_pos, battery, mission_id=None, altitude_m=PATROL_ALT_M, speed_kmh=None, on_finish="loop"):
+    def start(self, uav_id, route, start_pos, battery, mission_id=None, altitude_m=PATROL_ALT_M, speed_kmh=None, on_finish="loop",
+              route_kind="draw"):
         if len(route) < 2:
             raise ValueError("Lộ trình cần ít nhất 2 điểm")
         if on_finish not in ("loop", "rtb"):
@@ -277,7 +280,7 @@ class Autopilot:
             prev = self.uavs.get(uav_id)
             # đang tự lái mà đổi đường: bay tiếp từ vị trí/độ cao hiện tại, giữ nhật ký cũ
             start_alt = prev.alt if prev and prev.flying else 0.0
-            ap = UavAutopilot(uav_id, route, start_pos, battery, mission_id, altitude_m, speed, on_finish, start_alt)
+            ap = UavAutopilot(uav_id, route, start_pos, battery, mission_id, altitude_m, speed, on_finish, start_alt, route_kind)
             if prev:
                 ap.events.extend(list(prev.events)[: ap.events.maxlen - 1])
             self.uavs[uav_id] = ap

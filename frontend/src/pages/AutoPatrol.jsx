@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Bot, Pause, Play, Home, Hand, Radar, Route, Battery, Gauge, Mountain, AlertTriangle, PenLine, Undo2, Trash2, X } from "lucide-react";
-import { autopilotCommand, autopilotList, autopilotSimulateThreat, autopilotStart, autopilotStop, listMissions, listUAVs } from "../api";
+import { Bot, Pause, Play, Home, Hand, Radar, Route, Battery, Gauge, Mountain, AlertTriangle, PenLine, Undo2, Trash2, X, Grid3x3 } from "lucide-react";
+import { autopilotCommand, autopilotList, autopilotPlanSweep, autopilotSimulateThreat, autopilotStart, autopilotStop, listMissions, listUAVs } from "../api";
 import { LiveFrame } from "./MultiMonitor";
 
 const BASE = [21.0285, 105.8542];
@@ -17,6 +17,8 @@ const MODE = {
 const MANUAL = ["Điều khiển tay", "#64748b"];
 const EVENT_COLOR = { threat: "#ef4444", orbit: "#ef4444", battery: "#f59e0b", ignored: "#94a3b8", operator: "#38bdf8", done: "#f59e0b" };
 const DRAFT_COLOR = "#22d3ee";
+// Thời gian bay 1 lần sạc của UAV giả lập: pin 100% -> 25% với tốc độ hao 0,08%/s (autopilot.py) ~ 15 phút
+const ENDURANCE_S = (100 - 25) / 0.08;
 const MAX_POINTS = 100;
 
 const fmtClock = (iso) => new Date(iso).toLocaleTimeString("vi-VN", { hour12: false });
@@ -59,7 +61,7 @@ function droneIcon(name) {
 const lerp = (a, b, t) => a + (b - a) * t;
 const metersPerPixel = (lat, zoom) => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
 
-function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange, loop }) {
+function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange, loop, drawKind = "path", preview = null }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
   const staticLayerRef = useRef(null);
@@ -225,7 +227,15 @@ function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange
     layer.clearLayers();
     if (!drawing) return;
     const pts = draft.map((p) => [p.lat, p.lon]);
-    if (pts.length > 1) {
+    if (drawKind === "area") {
+      // Vùng quét: đa giác tô nhạt + đường quét đan chéo xem trước
+      if (pts.length > 2) L.polygon(pts, { color: DRAFT_COLOR, weight: 2, fillColor: DRAFT_COLOR, fillOpacity: 0.12, interactive: false }).addTo(layer);
+      else if (pts.length > 1) L.polyline(pts, { color: DRAFT_COLOR, weight: 2, dashArray: "4 4", interactive: false }).addTo(layer);
+      if (preview?.length > 1) {
+        L.polyline(preview.map((p) => [p.lat, p.lon]), { color: "#f8fafc", weight: 1.5, opacity: 0.9, dashArray: "6 6", className: "ap-route-flow draft", interactive: false }).addTo(layer);
+        L.circleMarker([preview[0].lat, preview[0].lon], { radius: 5, color: "#0f172a", weight: 2, fillColor: "#f8fafc", fillOpacity: 1 }).bindTooltip("Điểm bắt đầu quét").addTo(layer);
+      }
+    } else if (pts.length > 1) {
       L.polyline(loop && pts.length > 2 ? [...pts, pts[0]] : pts, { color: DRAFT_COLOR, weight: 3, dashArray: "8 6", className: "ap-route-flow draft" }).addTo(layer);
     }
     draft.forEach((p, i) => {
@@ -234,7 +244,7 @@ function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange
         icon: L.divIcon({ className: "", html: `<div class="ap-draft-pt">${i + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
         zIndexOffset: 2000,
       })
-        .bindTooltip(i === 0 ? "Điểm đầu — kéo để sửa" : "Kéo để sửa vị trí")
+        .bindTooltip(drawKind === "area" ? `Góc vùng ${i + 1} — kéo để sửa` : i === 0 ? "Điểm đầu — kéo để sửa" : "Kéo để sửa vị trí")
         .on("dragend", (e) => {
           const { draft, onDraftChange } = drawRef.current;
           const { lat, lng } = e.target.getLatLng();
@@ -242,7 +252,7 @@ function PatrolMap({ states, selectedId, onSelect, drawing, draft, onDraftChange
         })
         .addTo(layer);
     });
-  }, [drawing, draft, loop]);
+  }, [drawing, draft, loop, drawKind, preview]);
 
   useEffect(() => {
     ref.current?.classList.toggle("ap-drawing", !!drawing);
@@ -274,6 +284,8 @@ export default function AutoPatrol() {
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState({ source: "draw", mission_id: "", altitude_m: 100, speed_kmh: 43, on_finish: "loop" });
   const [draft, setDraft] = useState([]);
+  const [spacing, setSpacing] = useState(80); // khoảng cách giữa 2 đường quét (m) ~ bề rộng dải camera nhìn thấy
+  const [sweep, setSweep] = useState(null); // {route, lines, length_m, area_m2} | {error}
   const [rerouting, setRerouting] = useState(false); // UAV đang tự lái: mở form vẽ đường mới
   const [msg, setMsg] = useState(null); // {type: "error"|"ok", text}
   const [busy, setBusy] = useState(false);
@@ -313,7 +325,22 @@ export default function AutoPatrol() {
   const sel = named.find((s) => s.uav_id === selectedId);
   const missionName = (id) => missions.find((m) => m.id === id)?.name || `Nhiệm vụ #${id}`;
   const showForm = !sel || rerouting;
-  const drawing = showForm && form.source === "draw" && !!selUav && !["maintenance", "offline"].includes(selUav.status);
+  const drawing = showForm && ["draw", "sweep"].includes(form.source) && !!selUav && !["maintenance", "offline"].includes(selUav.status);
+
+  // Xem trước đường quét mỗi khi sửa vùng/khoảng cách (chờ 300 ms sau thao tác cuối)
+  useEffect(() => {
+    if (form.source !== "sweep" || draft.length < 3) return setSweep(null);
+    let cancelled = false;
+    const t = setTimeout(() => {
+      autopilotPlanSweep(draft, Number(spacing))
+        .then((r) => !cancelled && setSweep(r))
+        .catch((e) => !cancelled && setSweep({ error: e.message }));
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [form.source, draft, spacing]);
 
   async function act(fn, okText) {
     setBusy(true);
@@ -334,6 +361,7 @@ export default function AutoPatrol() {
   async function start() {
     const opts = { altitude_m: Number(form.altitude_m), speed_kmh: Number(form.speed_kmh), on_finish: form.on_finish };
     if (form.source === "draw") opts.route = draft;
+    else if (form.source === "sweep") opts.sweep = { area: draft, spacing_m: Number(spacing) };
     else opts.mission_id = Number(form.mission_id);
     const ok = await act(() => autopilotStart(selectedId, opts), rerouting ? `${selUav?.name} chuyển sang bay theo đường mới` : `${selUav?.name} bắt đầu tự tuần tra`);
     if (ok) {
@@ -350,7 +378,12 @@ export default function AutoPatrol() {
   const [modeLabel, modeColor] = sel ? MODE[sel.mode] : MANUAL;
   const loop = form.on_finish === "loop";
   const lengthM = routeLengthM(draft, loop);
-  const canStart = form.source === "draw" ? draft.length >= 2 : !!form.mission_id;
+  const canStart =
+    form.source === "draw" ? draft.length >= 2 : form.source === "sweep" ? !!sweep?.route : !!form.mission_id;
+  const setSource = (source) => {
+    if (source !== form.source) setDraft([]); // điểm đường bay và góc vùng quét khác nhau -> vẽ lại
+    setForm({ ...form, source });
+  };
 
   // Tiến độ tới điểm kế tiếp: khoảng cách còn lại, % chặng, thời gian dự kiến
   let nextWp = null;
@@ -368,16 +401,54 @@ export default function AutoPatrol() {
 
   const routeForm = (
     <div className="ap-form">
-      <div className="ap-seg" role="tablist">
-        <button role="tab" className={form.source === "draw" ? "on" : ""} onClick={() => setForm({ ...form, source: "draw" })}>
-          <PenLine size={13} /> Vẽ đường bay
+      <div className="ap-seg three" role="tablist">
+        <button role="tab" className={form.source === "draw" ? "on" : ""} onClick={() => setSource("draw")}>
+          <PenLine size={13} /> Vẽ đường
         </button>
-        <button role="tab" className={form.source === "mission" ? "on" : ""} onClick={() => setForm({ ...form, source: "mission" })}>
-          <Route size={13} /> Theo nhiệm vụ
+        <button role="tab" className={form.source === "sweep" ? "on" : ""} onClick={() => setSource("sweep")}>
+          <Grid3x3 size={13} /> Quét chéo
+        </button>
+        <button role="tab" className={form.source === "mission" ? "on" : ""} onClick={() => setSource("mission")}>
+          <Route size={13} /> Nhiệm vụ
         </button>
       </div>
 
-      {form.source === "draw" ? (
+      {form.source === "sweep" ? (
+        <div className="ap-draw-box">
+          <p className="ap-note">
+            {draft.length < 3
+              ? `Click lên bản đồ để vẽ các góc của vùng cần quét (${draft.length}/3 góc tối thiểu).`
+              : sweep?.error
+              ? sweep.error
+              : sweep
+              ? `Vùng ${(sweep.area_m2 / 1e6).toFixed(2)} km² · ${sweep.lines} đường quét chéo 2 hướng · ${(sweep.length_m / 1000).toFixed(1)} km · khoảng ${fmtDuration(sweep.length_m / (Number(form.speed_kmh) / 3.6 || 12))}`
+              : "Đang tính đường quét…"}
+          </p>
+          {sweep?.route && sweep.length_m / (Number(form.speed_kmh) / 3.6 || 12) > ENDURANCE_S && (
+            <div className="ap-warn" title="Muốn xong nhanh hơn: tăng khoảng cách quét hoặc vẽ vùng nhỏ lại">
+              <span>
+                ⚠ Về sạc ~{Math.ceil(sweep.length_m / (Number(form.speed_kmh) / 3.6 || 12) / ENDURANCE_S) - 1} lần · mỗi lần bay ~{Math.round(ENDURANCE_S / 60)} phút
+              </span>
+              <span>Sạc xong tự quét tiếp từ chỗ dừng</span>
+            </div>
+          )}
+          <label className="ap-inline">
+            Khoảng cách giữa 2 đường quét
+            <span>
+              <input type="range" min="30" max="300" step="10" value={spacing} onChange={(e) => setSpacing(e.target.value)} />
+              <b>{spacing} m</b>
+            </span>
+          </label>
+          <div className="ap-draw-actions">
+            <button className="ap-btn" disabled={!draft.length} onClick={() => setDraft(draft.slice(0, -1))}>
+              <Undo2 size={14} /> Xoá góc cuối
+            </button>
+            <button className="ap-btn" disabled={!draft.length} onClick={() => setDraft([])}>
+              <Trash2 size={14} /> Xoá vùng
+            </button>
+          </div>
+        </div>
+      ) : form.source === "draw" ? (
         <div className="ap-draw-box">
           <p className="ap-note">
             {draft.length === 0
@@ -486,17 +557,32 @@ export default function AutoPatrol() {
         {/* Bản đồ */}
         <section className="dashboard-panel ap-map-panel">
           <div className="panel-section-header">
-            <h3 className="section-title">{drawing ? `VẼ ĐƯỜNG BAY CHO ${selUav?.name}` : "BẢN ĐỒ TỰ TUẦN TRA"}</h3>
+            <h3 className="section-title">
+              {drawing ? `${form.source === "sweep" ? "VẼ VÙNG QUÉT" : "VẼ ĐƯỜNG BAY"} CHO ${selUav?.name}` : "BẢN ĐỒ TỰ TUẦN TRA"}
+            </h3>
             <div className="ap-legend">
-              {drawing && <span><i style={{ background: DRAFT_COLOR }} /> Đường đang vẽ</span>}
+              {drawing && <span><i style={{ background: DRAFT_COLOR }} /> {form.source === "sweep" ? "Vùng quét" : "Đường đang vẽ"}</span>}
+              {drawing && form.source === "sweep" && <span><i style={{ background: "#f8fafc" }} /> Đường quét chéo</span>}
               <span><i style={{ background: "#22c55e" }} /> Đường đang bay</span>
               <span><i style={{ background: "#facc15" }} /> Điểm đang tới</span>
               <span><i className="dash" /> Vùng tuần tra</span>
               <span><i style={{ background: "#ef4444" }} /> Vùng quan sát mục tiêu</span>
             </div>
           </div>
-          <PatrolMap states={named} selectedId={selectedId} onSelect={selectUav} drawing={drawing} draft={draft} onDraftChange={setDraft} loop={loop} />
-          {drawing && draft.length === 0 && <div className="ap-map-hint">Click lên bản đồ để đặt điểm bay đầu tiên</div>}
+          <PatrolMap
+            states={named}
+            selectedId={selectedId}
+            onSelect={selectUav}
+            drawing={drawing}
+            draft={draft}
+            onDraftChange={setDraft}
+            loop={loop}
+            drawKind={form.source === "sweep" ? "area" : "path"}
+            preview={form.source === "sweep" ? sweep?.route : null}
+          />
+          {drawing && draft.length === 0 && (
+            <div className="ap-map-hint">{form.source === "sweep" ? "Click lên bản đồ để vẽ góc đầu tiên của vùng quét" : "Click lên bản đồ để đặt điểm bay đầu tiên"}</div>
+          )}
           {!drawing && states.length === 0 && <div className="ap-map-hint">Chưa có UAV nào tự lái — chọn UAV bên trái để bắt đầu</div>}
         </section>
 
@@ -544,7 +630,8 @@ export default function AutoPatrol() {
                 </div>
               )}
               <div className="ap-mission">
-                {sel.mission_id ? `Lộ trình: ${missionName(sel.mission_id)}` : "Đường bay vẽ tay"} · hết đường thì {sel.on_finish === "loop" ? "lặp lại" : "về căn cứ"}
+                {sel.route_kind === "sweep" ? "Quét vùng đan chéo" : sel.mission_id ? `Lộ trình: ${missionName(sel.mission_id)}` : "Đường bay vẽ tay"} · hết
+                đường thì {sel.on_finish === "loop" ? "lặp lại" : "về căn cứ"}
               </div>
               {sel.investigation && (
                 <div className="ap-alert">

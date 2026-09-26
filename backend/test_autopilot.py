@@ -60,13 +60,18 @@ def test_low_battery_returns_home_charges_and_resumes():
     ap, clock = make(battery=ap_mod.RTB_BATTERY + 1)
     run(ap, 30, clock)
     assert ap.mode == "rtb" and ap.resume_after_charge
+    wp_when_left = ap.wp
     assert not ap.report_threat((21.0305, 105.8525))  # đang về vì pin yếu -> không đi soi
     run(ap, 60, clock)
     assert ap.mode == "landed" and ap.alt == 0 and distance_m(ap.pos, BASE) < 1
     run(ap, 60, clock)
     assert ap.mode == "landed"  # chưa đủ 95% -> vẫn nằm sạc
-    run(ap, 120, clock)  # sạc 0.5%/s -> đủ pin
+    for _ in range(400):  # sạc 0.5%/s -> tới lúc tự cất cánh lại
+        run(ap, 1, clock)
+        if ap.mode != "landed":
+            break
     assert ap.mode == "patrol" and not ap.resume_after_charge
+    assert ap.wp == wp_when_left  # bay tiếp từ đúng điểm đang dở (quét vùng dài không phải làm lại từ đầu)
 
 
 def test_operator_commands():
