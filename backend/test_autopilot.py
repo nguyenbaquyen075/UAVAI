@@ -97,6 +97,42 @@ def test_operator_pause_cancels_investigation():
     assert ap.mode == "patrol" and ap.investigation is None
 
 
+def test_one_way_route_returns_home_at_end():
+    clock = FakeClock()
+    ap_mod.time = clock
+    ap = UavAutopilot(1, ROUTE, ROUTE[0], 100.0, on_finish="rtb")
+    run(ap, 200, clock)
+    assert ap.laps == 1 and ap.mode in ("rtb", "landed") and not ap.resume_after_charge
+    run(ap, 300, clock)
+    assert ap.mode == "landed"  # về theo kế hoạch -> không tự cất cánh lại
+
+
+def test_reroute_while_flying_keeps_altitude_and_log():
+    clock = FakeClock()
+    ap_mod.time = clock
+    pilot = ap_mod.Autopilot.__new__(ap_mod.Autopilot)  # không chạy luồng nền
+    pilot.lock, pilot.uavs, pilot.on_mode_change, pilot._modes = ap_mod.threading.Lock(), {}, None, {}
+    pilot.start(1, ROUTE, BASE, 100.0)
+    run(pilot.uavs[1], 60, clock)
+    alt = pilot.uavs[1].alt
+    new_route = [(21.026, 105.856), (21.027, 105.858)]
+    pilot.start(1, new_route, pilot.uavs[1].pos, 90.0)
+    ap = pilot.uavs[1]
+    assert ap.route == new_route and ap.alt == alt and ap.mode == "patrol"
+    assert len(ap.events) >= 2  # nhật ký cũ được giữ
+
+
+def test_refuses_start_with_low_battery():
+    pilot = ap_mod.Autopilot.__new__(ap_mod.Autopilot)
+    pilot.lock, pilot.uavs, pilot.on_mode_change, pilot._modes = ap_mod.threading.Lock(), {}, None, {}
+    try:
+        pilot.start(1, ROUTE, BASE, ap_mod.MIN_START_BATTERY - 1)
+        assert False, "phải từ chối khi pin thấp"
+    except ValueError as e:
+        assert "Pin chỉ còn" in str(e)
+    assert 1 not in pilot.uavs
+
+
 if __name__ == "__main__":
     n = 0
     for k, f in list(globals().items()):

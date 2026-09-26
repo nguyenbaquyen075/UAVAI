@@ -19888,3 +19888,21 @@ td.zone-cell,
 .ap-actions { grid-template-columns: 1fr 1fr; }
 .ap-actions .ap-btn.danger { grid-column: 1 / -1; }
 .ap-btn { min-width: 0; }
+.ap-actions .ap-btn.wide { grid-column: 1 / -1; }
+.ap-seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #334155; border-radius: 7px; overflow: hidden; }
+.ap-seg button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 6px; background: #0f172a;
+  color: #94a3b8; border: none; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.ap-seg button.on { background: #22c55e; color: #052e16; }
+.ap-draw-box { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed #22d3ee; border-radius: 8px; background: rgba(34, 211, 238, 0.06); }
+.ap-draw-box .ap-note { line-height: 1.5; }
+.ap-draw-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ap-draft-pt {
+  width: 22px; height: 22px; border-radius: 50%; background: #22d3ee; color: #083344; font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; border: 2px solid #0f172a; cursor: grab; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.ap-map.ap-drawing, .ap-map.ap-drawing .leaflet-grab { cursor: crosshair; }
+.ap-rules li { align-items: center; min-width: 0; }
+.ap-rules li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ap-rules svg { margin-top: 0; }

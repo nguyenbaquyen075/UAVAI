@@ -337,22 +337,51 @@ def autopilot_list():
     return list(autopilot.all_states().values())
 
 
+MAX_ROUTE_POINTS = 100
+MAX_ROUTE_FROM_BASE_M = 20_000  # đường vẽ tay không được xa căn cứ quá 20 km (tầm liên lạc)
+
+
+def _parse_route(raw):
+    """Đường vẽ tay từ giao diện: kiểm tra kiểu/số lượng/phạm vi toạ độ trước khi cho UAV bay."""
+    if not isinstance(raw, list) or not 2 <= len(raw) <= MAX_ROUTE_POINTS:
+        raise HTTPException(status_code=400, detail=f"Đường bay cần từ 2 đến {MAX_ROUTE_POINTS} điểm")
+    route = []
+    for p in raw:
+        try:
+            lat, lon = float(p["lat"]), float(p["lon"])
+        except (TypeError, KeyError, ValueError):
+            raise HTTPException(status_code=400, detail="Toạ độ đường bay không hợp lệ")
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise HTTPException(status_code=400, detail="Toạ độ đường bay ngoài phạm vi")
+        if ap_mod.distance_m(ap_mod.BASE, (lat, lon)) > MAX_ROUTE_FROM_BASE_M:
+            raise HTTPException(status_code=400, detail=f"Có điểm cách căn cứ quá {MAX_ROUTE_FROM_BASE_M // 1000} km")
+        route.append((lat, lon))
+    return route
+
+
 @app.post("/api/autopilot/{uav_id}/start")
 def autopilot_start(uav_id: int, body: dict):
+    """Bật tự lái (hoặc đổi đường khi đang tự lái). Lộ trình: body.route (vẽ tay) hoặc body.mission_id."""
     uav = next((u for u in db.list_uavs() if u["id"] == uav_id), None)
     if uav is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy UAV")
     if uav["status"] in ("maintenance", "offline"):
         raise HTTPException(status_code=400, detail="UAV đang bảo trì/offline, không thể tự lái")
-    mission = next((m for m in db.list_missions() if m["id"] == body.get("mission_id")), None)
-    if mission is None:
-        raise HTTPException(status_code=400, detail="Chọn nhiệm vụ có lộ trình để tuần tra")
-    route = [(w["lat"], w["lon"]) for w in mission["waypoints"]]
+    mission_id = None
+    if body.get("route") is not None:
+        route = _parse_route(body["route"])
+    else:
+        mission = next((m for m in db.list_missions() if m["id"] == body.get("mission_id")), None)
+        if mission is None:
+            raise HTTPException(status_code=400, detail="Vẽ đường bay hoặc chọn nhiệm vụ có lộ trình")
+        route = [(w["lat"], w["lon"]) for w in mission["waypoints"]]
+        mission_id = mission["id"]
     current = telemetry.position(uav_id)
     try:
-        autopilot.start(uav_id, route, (current["lat"], current["lon"]), current["battery_pct"], mission["id"],
-                        float(body.get("altitude_m") or ap_mod.PATROL_ALT_M), body.get("speed_kmh"))
-    except ValueError as e:
+        autopilot.start(uav_id, route, (current["lat"], current["lon"]), current["battery_pct"], mission_id,
+                        float(body.get("altitude_m") or ap_mod.PATROL_ALT_M), body.get("speed_kmh"),
+                        body.get("on_finish", "loop"))
+    except (ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     # AI phải canh camera của UAV này suốt thời gian tự lái
     if uav_id != pipeline.active_uav_id and uav["video_source"]:

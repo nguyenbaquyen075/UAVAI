@@ -31,6 +31,7 @@ THREAT_SAME_SPOT_M = 150.0
 GEOFENCE_MARGIN_M = 300.0    # mục tiêu ngoài vùng tuần tra + biên này: chỉ báo, không bay tới
 RTB_BATTERY = 25.0           # dưới mức này tự về căn cứ, ưu tiên hơn mọi chế độ khác
 RESUME_BATTERY = 95.0
+MIN_START_BATTERY = RTB_BATTERY + 5  # thấp hơn thì vừa bật đã phải quay về -> từ chối ngay cho rõ
 DRAIN_PCT_PER_S = 0.08       # ~17 phút bay từ 100% xuống 20%
 CHARGE_PCT_PER_S = 0.5
 TICK_S = 0.5
@@ -59,12 +60,14 @@ def _offset(p, dx_m, dy_m):
 
 
 class UavAutopilot:
-    def __init__(self, uav_id, route, start, battery, mission_id=None, altitude_m=PATROL_ALT_M, speed_mps=CRUISE_MPS):
+    def __init__(self, uav_id, route, start, battery, mission_id=None, altitude_m=PATROL_ALT_M, speed_mps=CRUISE_MPS,
+                 on_finish="loop", start_alt=0.0):
         self.uav_id = uav_id
+        self.on_finish = on_finish  # "loop": lặp lại lộ trình | "rtb": bay hết 1 lượt rồi về căn cứ
         self.route = [tuple(p) for p in route]
         self.mission_id = mission_id
         self.pos = tuple(start)
-        self.alt = 0.0
+        self.alt = start_alt  # đổi đường khi đang bay thì giữ nguyên độ cao hiện tại
         self.target_alt = altitude_m
         self.speed = speed_mps
         self.heading = 0.0
@@ -77,7 +80,7 @@ class UavAutopilot:
         self.recent_threats = deque(maxlen=20)  # (thời điểm, vị trí) đã soi
         self.events = deque(maxlen=50)
         self._geofence = self._make_geofence()
-        self.log("start", f"Bật tự lái, tuần tra {len(self.route)} điểm")
+        self.log("start", f"Bật tự lái, {len(self.route)} điểm, hết đường thì " + ("lặp lại" if on_finish == "loop" else "về căn cứ"))
 
     # --- tiện ích ---
     def log(self, kind, text):
@@ -174,7 +177,12 @@ class UavAutopilot:
                 self.wp = (self.wp + 1) % len(self.route)
                 if self.wp == 0:
                     self.laps += 1
-                    self.log("lap", f"Hoàn thành vòng tuần tra thứ {self.laps}")
+                    if self.on_finish == "rtb":
+                        self.mode = "rtb"
+                        self.resume_after_charge = False
+                        self.log("done", "Đã bay hết đường — về căn cứ")
+                    else:
+                        self.log("lap", f"Hoàn thành vòng tuần tra thứ {self.laps}")
 
         elif self.mode == "investigate":
             inv = self.investigation
@@ -227,6 +235,7 @@ class UavAutopilot:
         return {
             "uav_id": self.uav_id,
             "mission_id": self.mission_id,
+            "on_finish": self.on_finish,
             "mode": self.mode,
             "mode_label": MODE_LABEL[self.mode],
             "waypoint_index": self.wp,
@@ -256,12 +265,22 @@ class Autopilot:
         self.running = True
         threading.Thread(target=self._loop, daemon=True).start()
 
-    def start(self, uav_id, route, start_pos, battery, mission_id=None, altitude_m=PATROL_ALT_M, speed_kmh=None):
+    def start(self, uav_id, route, start_pos, battery, mission_id=None, altitude_m=PATROL_ALT_M, speed_kmh=None, on_finish="loop"):
         if len(route) < 2:
             raise ValueError("Lộ trình cần ít nhất 2 điểm")
-        speed = (speed_kmh / 3.6) if speed_kmh else CRUISE_MPS
+        if on_finish not in ("loop", "rtb"):
+            raise ValueError("on_finish phải là 'loop' hoặc 'rtb'")
+        if battery < MIN_START_BATTERY:
+            raise ValueError(f"Pin chỉ còn {battery:.0f}% — cần từ {MIN_START_BATTERY:.0f}% trở lên để bắt đầu tự lái (sạc hoặc điều khiển tay)")
+        speed = (float(speed_kmh) / 3.6) if speed_kmh else CRUISE_MPS
         with self.lock:
-            self.uavs[uav_id] = UavAutopilot(uav_id, route, start_pos, battery, mission_id, altitude_m, speed)
+            prev = self.uavs.get(uav_id)
+            # đang tự lái mà đổi đường: bay tiếp từ vị trí/độ cao hiện tại, giữ nhật ký cũ
+            start_alt = prev.alt if prev and prev.flying else 0.0
+            ap = UavAutopilot(uav_id, route, start_pos, battery, mission_id, altitude_m, speed, on_finish, start_alt)
+            if prev:
+                ap.events.extend(list(prev.events)[: ap.events.maxlen - 1])
+            self.uavs[uav_id] = ap
         self._notify(uav_id)
 
     def stop(self, uav_id):
