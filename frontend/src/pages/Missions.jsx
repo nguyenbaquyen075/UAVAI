@@ -1121,7 +1121,7 @@ export default function Missions({ payload, onNavigateTab }) {
                     <Radio size={28} />
                     <p>
                       {selected
-                        ? `${assignedUav?.name || "UAV"} không phải UAV đang phát trực tiếp.`
+                        ? `${assignedUav?.name || "UAV"} chưa phát trực tiếp`
                         : "Chọn một nhiệm vụ để xem trực tiếp."}
                     </p>
                     {selected && (
